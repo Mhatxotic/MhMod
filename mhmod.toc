@@ -1,15 +1,15 @@
 # =========================================================================== #
 # MhMod                                                   r World of Warcraft #
 # =========================================================================== #
-## X-Min-Interface: 70300
-## Interface: 70300
+## X-Min-Interface: 100107
+## Interface: 100107
 ## Title: MhMod
 ## Notes: An all-in-one addon for World of Warcraft
 ## Author: Mhat
-## eMail: https://github.com/xmhat/mhmod
-## URL: https://github.com/xmhat/mhmod
-## X-Website: https://github.com/xmhat/mhmod
-## Version: 6.0.0
+## eMail: https://github.com/xmhat
+## URL: https://github.com/xmhat
+## X-Website: https://github.com/xmhat
+## Version: 10.1.7
 ## DefaultState: enabled
 ## SavedVariables: mhconfig, mhnotes, mhwlog, mhclog, mhgtrack, mhmoney, mhlang
 ## SavedVariablesPerCharacter: mhstats, mhtrack
