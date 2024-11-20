@@ -44,7 +44,7 @@ A very special thanks to following people for using my script and helping me out
 * TextWrangler - A text file editor for Macintosh.
 
 ## Attention coders…
-If you use any of my code, then please give me credit by quoting where you originally got it (i.e. github.com/xmhat/mhmod). I hope you enjoy learning how to code and using the LUA implementation.
+If you use any of my code, then please give me credit by quoting where you originally got it (i.e. github.com/mhatxotic/mhmod). I hope you enjoy learning how to code and using the LUA implementation.
 
 ## Disclaimer…
 This addon is provided as is without warranty of any kind. The author provides no warranties, express or implied, that the addon is free of error, or are consistent with any particular standard of merchantability, or that they will meet your requirements for any particular application. They should not be relied upon for solving a problem whose incorrect solution could result in injury to a person or loss of property. If you do use this addon or procedures in such a manner, it is at your own risk. The author will disclaim all liability for direct, incidental or consequential damages resulting from your use of this addon. The only garauntee the author gives is that it generally performs as intended and is free of malware or malicious intent.

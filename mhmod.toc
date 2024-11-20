@@ -6,9 +6,9 @@
 ## Title: MhMod
 ## Notes: An all-in-one addon for World of Warcraft
 ## Author: Mhat
-## eMail: https://github.com/xmhat
-## URL: https://github.com/xmhat
-## X-Website: https://github.com/xmhat
+## eMail: https://github.com/mhatxotic
+## URL: https://github.com/mhatxotic
+## X-Website: https://github.com/mhatxotic
 ## Version: 10.1.7
 ## DefaultState: enabled
 ## SavedVariables: mhconfig, mhnotes, mhwlog, mhclog, mhgtrack, mhmoney, mhlang

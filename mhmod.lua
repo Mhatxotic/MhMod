@@ -7,8 +7,8 @@ local Version                 = {      -- You're not nice if you change these
   Major       = 2,
   Minor       = 0,
   Extra       = "" ,
-  Website     = "github.com/xmhat",
-  WebsiteFull = "https://github.com/xmhat/mhmod"
+  Website     = "github.com/mhatxotic",
+  WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
 -- Player data ----------------------------------------------------------------
 local sNull                   = "";    -- Null string (const)
