@@ -1,17 +1,14 @@
 -- ============================================================================
 -- MH-MOD                                                 for World of Warcraft
 -- == Version information (do not modify) =====================================
+local sNull                   = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
-  Name        = "MhMod",
-  Author      = "Mhat",
-  Major       = 2,
-  Minor       = 0,
-  Extra       = "" ,
-  Website     = "github.com/xmhat",
-  WebsiteFull = "https://github.com/xmhat/mhmod"
+  Name        = "MhMod",        Author = "Mhat",
+  Release     = 16,             Extra = sNull,
+  Website     = "github.com/mhatxotic",
+  WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
 -- Player data ----------------------------------------------------------------
-local sNull                   = "";    -- Null string (const)
 local sMyName                 = sNull; -- Current player name
 local sMyRealm                = sNull; -- Current realm name
 local sMyNameRealm            = sNull; -- Current name-realm name
@@ -23,7 +20,6 @@ local nChatLogLastPruned      = 0;     -- Time the chat logs were pruned
 local bInDuel                 = false; -- Currently in duel status
 local iIgnorePartyMessage     = 0;     -- Counter to ignore party message
 local iLastChannelMsgId       = -1;    -- Stop pointless event recursions
-local nAutoCloseRepBarTime    = -1;    -- Time faction was last updated
 local sLastInstance           = sNull; -- Last instance entered
 local bLoading                = true;  -- Player on loading screen
 local bLowHealth          = GetTime(); -- Time player was low on health
@@ -52,9 +48,9 @@ local iXPLeft                 = 0;     -- XP needed to level
 local iXPMax                  = 0;     -- XP total needed to level
 local iXPSession              = 0;     -- XP gathered this session
 local iXPLastGain             = 0;     -- Last XP gain
--- Artifact data --------------------------------------------------------------
-local iArtifactXPLast         = 0;     -- Last artifact gain
-local iArtifactXPTotal        = 0;     -- Artifact XP total
+-- Artefact data --------------------------------------------------------------
+local iArtefactXPLast         = 0;     -- Last artefact gain
+local iArtefactXPTotal        = 0;     -- Artefact XP total
 -- Money ----------------------------------------------------------------------
 local iMoney                  = 0;     -- Current money
 local iMoneySession           = 0;     -- Money gained this session
@@ -68,6 +64,7 @@ local LocalCommandsData;               -- Contains /mh commands data
 local RemoteCommandsData;              -- Contains !mh commands data
 -- Persistant data aliases ----------------------------------------------------
 local BestStatsData;                   -- Alias of 'mhstats.BS'
+local ConfigNewData;                   -- New options detected at start up
 local ConfigBooleanData;               -- Alias of 'mhconfig.boolean'
 local ConfigDynamicData;               -- Alias to 'mhconfig.dynamic'
 -- Frames data ----------------------------------------------------------------
@@ -95,7 +92,6 @@ local InstanceData           = { };    -- Saved instances data
 local LastNewMail            = { };    -- New mail data
 local MapPingerData          = { };    -- Map ping flood control
 local MirrorTimerData        = { };    -- Countdown timers (breath, etc.)
-local NewOptionsData         = { };    -- New options detected
 local QuestData              = { };    -- Quests data
 local RealmMoneyData;                  -- Money statistical data of all chars
 local TextFloodData          = { };    -- Player text flood control
@@ -121,7 +117,6 @@ local bShowDps                = false; -- Show damage per second
 local SlashFunc;                       -- Slash command function
 local BlockTrades;                     -- Set block trades
 local ClampNumber;                     -- Clamp number between min/max
-local ClearQuests;                     -- Clear specified quests
 local ClickDialogButton;               -- Synthesis a dialogue button click
 local CommandExists;                   -- Specified command exists
 local CreateBlankGroupArray;           -- Create blank group data template
@@ -181,7 +176,7 @@ local StringToColour;                  -- Convert a string to a colour code
 local StripColour;                     -- Strip colour from text
 local TableSize;                       -- Return size of a keystring table
 local TriggerTimer;                    -- Trigger a created timer
-local GetActiveArtifactInfo;           -- Get active artifact info
+local GetActiveArtefactInfo;           -- Get active artefact info
 local UnitFrameUpdate;                 -- Update unit frame
 local UnitIsFriend;                    -- Specified unit is a friend
 local UpdateGroupTrackData;            -- Update group tracker data
@@ -202,7 +197,7 @@ local InitsData = {                    -- Inits data structure
   Bags                       = false;  -- Bags initialised?
   Money                      = false;  -- Money initialised?
   XP                         = false;  -- Experience initialised?
-  Artifact                   = false;  -- Artifact initialised?
+  Artefact                   = false;  -- Artifact initialised?
   Archaeology                = false;  -- Archaeology initialised?
   Battleground               = false;  -- Battleground data initialised?
   BGScores                   = false;  -- Battleground scores initialised?
@@ -262,8 +257,7 @@ local ValidMoneyValues = {
 };
 -- Tooltip unit classification types data -------------------------------------
 local UnitClassificationTypesData = {
-  unknown   = { C=0x000000, F=0x00, N=false },
-  normal    = { C=0x000000, F=0x00, N="" },
+  normal    = { C=0x000000, F=0x00, N=sNull },
   elite     = { C=0xFFCC00, F=0x01, N="Elite" },
   worldboss = { C=0xFF2F2F, F=0x11, N="Boss" },
   rare      = { C=0x6666FF, F=0x02, N="Rare" },
@@ -336,10 +330,11 @@ local StatsCatsData = {
 };
 -- Variables and commands list -----------------------------------------------
 local ConfigData = {
+  Command = "mh",                      -- Command as lower case
+  CommandUpper = sNull,                -- Filled in at init
+  New = { },                -- New options
   Options = {
-    ["Achievement"] = {
-      autoaap = { R=0, SD="Announce achievement progress",          LD="Automatically announce achievement progress" },
-    }, ["Battleground"] = {
+    ["Battleground"] = {
       autorel = { R=0, SD="Auto-release corpse in battleground",    LD="Automatically release your corpse. Only works in battlegrounds" },
       bgavnms = { R=0, SD="Use new Alterac Valley message system",  LD="Replaces all herald and general yelling with new short and more understandable generic messages" },
       bgreprt = { R=0, SD="Report battleground status to party",    LD="Reports all battleground activity to the party you are in" },
@@ -347,6 +342,7 @@ local ConfigData = {
       blockbg = { R=0, SD="Block battleground chat",                LD="Block all battleground chat. Depending on your exemptions you will still see chat from your friends, guild members, party members, etc" },
       blockwb = { R=0, SD="Block whispers in battlegrounds",        LD="Block all incoming whispers from battlegrounds. Depending on your exemptions you will still see whispers from your friends, guild members, party members, etc" },
     }, ["Quest"] = {
+      autoaap = { R=0, SD="Announce achievement progress",          LD="Automatically announce achievement progress" },
       autoaeq = { R=0, SD="Auto-accept escort quests",              LD="Automatically accepts scripted event quests if another party member starts it" },
       autoaqs = { R=0, SD="Announce quest progress",                LD="Announces quest progress. A message is displayed to yourself when soloing, a message is sent to the party when in a party, and sent to the raid when in a raid" },
       autoaqw = { R=0, SD="Announce tracked quests only",           LD="Requires 'Announce quest progress' enabled. Announces only if the quest is a tracked quest on the standard Blizzard UI" },
@@ -366,10 +362,6 @@ local ConfigData = {
       autoswr = { R=0, SD="Auto-set reputation bar",                LD="Automatically sets the active reputation bar to the last highest reputation change" },
       blockrw = { R=0, SD="Block annoying raid warning sound",      LD="Block the original raid warning format and instead displays the message in the chat console and also removes the annoying sound" },
       showicm = { R=0, SD="Play in/out of combat warnings",         LD="Plays a sound for when you enter or leave combat" },
-    }, ["Auction"] = {
-      autofbo = { R=0, SD="Auto-fill AH buyout",                    LD="Automatically fills the buyout in the auction house to 100% of the auctioneers recommended selling price" },
-      autoflr = { R=0, SD="Auto-fill AH level ranges",              LD="Automatically fills the level ranges in the auction house and checks the usable items only checkbox" },
-      autonos = { R=0, SD="Auto-announce AH sell success",          LD="Automatically notifies you on an auction house item selling with a sound and a message in the middle of your screen" },
     }, ["Loot"] = {
       autodis = { R=0, SD="Auto-disenchant loot when possible",     LD="Automatically selects disenchant instead of auto-greed when possible" },
       autodpl = { R=0, SD="Auto-unset pass on loot in instance",    LD="Automatically re-enables your pass-on-loot status when you enter a new instance. This is useful if you are boosting someone and goto a proper instance later on, but you forgot to unset it! A manadatory warning will be shown when this option is disabled" };
@@ -380,6 +372,7 @@ local ConfigData = {
     }, ["Money & Item"] = {
       advtrak = { R=0, SD="Advanced data tracking",                 LD="Improves the way honor, experience, spells, money, reputation and item gains and losses are displayed and gives you more advanced information then what is normally shown" },
       autonnm = { R=0, SD="Auto-notify on new mail",                LD="Automatically notifies you when you receive new mail and displays who sent you the mail" },
+      autonos = { R=0, SD="Auto-announce AH sell success",          LD="Automatically notifies you on an auction house item selling with a sound and a message in the middle of your screen" },
       autorep = { R=0, SD="Auto-repair all your equipment",         LD="Automatically repair your items when they need repairing. The amount of money spent is displayed. You can hold the shift key while opening the repair merchant window to temporarily disable this feature" },
       autorgf = { R=0, SD="Force repair when guild repair fails",   LD="Automatically repair your items using your own characters purse when the guild bank repair fails. Requires guild bank repair to be enabled" },
       autorpg = { R=0, SD="Auto-repair with guild bank",            LD="Automatically repair your items when they need repairing from the guild bank. The amount of money spent is displayed. You need to enable auto-repair for this to work" },
@@ -388,7 +381,7 @@ local ConfigData = {
       bagclik = { R=0, SD="Allow item alt+click enhancements",      LD="Allows you to Alt+LeftClick an item to track it and Alt+RightClick to show more information about it. This applies to items in your bags, merchant items and item links" },
       bagsell = { R=0, SD="Allow auto-auctioning of items",         LD="If you have alt+click announcements enabled, holding shift key while alt+clicking an item in your bag while the auction house is open will automatically auction the item for you" },
     }, ["Group"] = {
-      autoall = { R=0, SD="Auto-accept LFG role confirm dialog",    LD="Automatically accepts the looking-for-group role confirmation dialog-box. The description can be automatically set by editing 'AutoLFGDescription' in advanced settings. This can be temporarily disabled by holding shift before this event occurs" },
+      autoall = { R=0, SD="Auto-accept LFG role confirm dialog",    LD="Automatically accepts the looking-for-group role confirmation dialog-box. The description can be automatically set by editing 'dalfgd' in advanced settings. This can be temporarily disabled by holding shift before this event occurs" },
       autoarc = { R=0, SD="Auto-accept role check dialog",          LD="Automatically accepts the looking-for-dungeon role confirmation dialog-box. You can still change your role by right clicking your portrait and selecting 'set role' or by removing yourself from the LFD queue" },
       autoasa = { R=0, SD="Auto-accept summons only when away",     LD="Automatically accept summons from exempted players but only when you are away" },
       autoasu = { R=0, SD="Auto-accept summons",                    LD="Automatically accept summons from exempted players" },
@@ -480,9 +473,9 @@ local ConfigData = {
     },
   }, Commands = {
     ["Quest"] = {
+      dumpllqu = { SD="Clear low level quests",                LD="Completely clears low level quests from your quest log" },
+      dumpduqu = { SD="Clear dungeon quests",                  LD="Completely clears dungeon and raid quests from your quest log" },
       dumpalqu = { SD="Clear quest log",                       LD="Completely clears your quest log" },
-      dumphlqu = { SD="Dump higher-level quests",              LD="Dumps all the higher-level (red) quests you have in your log" },
-      dumpllqu = { SD="Dump low-level quests",                 LD="Dumps all the low-level (gray) quests you have in your log" },
       showqu   = { SD="Report all quests",                     LD="Reports to the chat all the quests you have started" },
     }, ["Interface"] = {
       reload   = { SD="Reload the user interface",             LD="Reload the user interface which reloads all the built in UI scripts and all your modifications" },
@@ -549,7 +542,6 @@ local ConfigData = {
       stsshowb = { SD="Show other players' stats dialog",      LD="Allows you to specify someone else to view their best melee, skill and healing records" },
       stsshowp = { SD="Show personal stats dialog",            LD="Shows your best melee, skill and healing records" },
     }, ["System"] = {
-      garbcol  = { SD="Perform garbage collection",            LD="Performs addon garbage collection and frees up wasted addon memory. Blizzard does this automatically, but is here if you really need it" },
       logout   = { SD="Log out this character",                LD="Logs out your character to the character select screen" },
       quit     = { SD="Log out this character and quit",       LD="Logs out your character and quits the game" },
       quitnow  = { SD="Quit the game",                         LD="Immediatly quits the game without confirmation (as if alt+f4 was pressed)" },
@@ -561,45 +553,36 @@ local ConfigData = {
       togglef =  { SD="Toggle full-screen/window mode",        LD="A quick command to toggle full-screen/window mode" },
     },
   }, Dynamic = {
-    AutoLFGDescription      = { DF=     sNull,                      SD="Automatic LFG description message",      LD="When this is not empty, the text specified will be automatically entered into the LFG description box and automatically accepted. The setting 'autoall' must be enabled for this to work" },
-    AutoMsgEntryTimeout     = { DF=       300, MI=   1, MA=   3600, SD="Timeout limit for AFK msg anti-spam",    LD="Seconds to wait before a DND or AFK auto-reply message is displayed again" },
-    AutoRaidTargetIcon      = { DF=         1, MI=   1, MA=      8, SD="Default auto-target raid icon",          LD="Changes the icon used for auto-marking. 1=Star, 2=Circle, 3=Diamond, 4=Triangle, 5=Moon, 6=Square, 7=Cross or 8=Skull" },
-    AutoSellRate            = { DF=         5, MI=   1, MA=     10, SD="Automatic sell rate per update",         LD="Because Blizzard recently started limiting the amount of items you can sell at once using a script, this value allows you to fine tune how many items are sold at once" },
-    BGAutoLeaveTime         = { DF=       120, MI=   0, MA=    120, SD="Battleground auto-leave time",           LD="Specifies the number of seconds before automatically leaving a battleground" },
-    BidCommonMultiplier     = { DF=         1, MI=   1, MA=   1000, SD="Bid multiplier for common items",        LD="Specifies the profit mutliplier you want to add to the bid price for COMMON (white) quality items when the auto-buyout option is enabled" },
-    BidEpicMultiplier       = { DF=        50, MI=   1, MA=   1000, SD="Bid multiplier for epic items",          LD="Specifies the profit mutliplier you want to add to the bid price for EPIC (purple) quality when the auto-buyout option is enabled" },
-    BidRareMultiplier       = { DF=         5, MI=   1, MA=   1000, SD="Bid multiplier for rare items",          LD="Specifies the profit mutliplier you want to add to the bid price for RARE (blue) quality items when the auto-buyout option is enabled" },
-    BidUncommonMultiplier   = { DF=         1, MI=   1, MA=   1000, SD="Bid multiplier for uncommon items",      LD="Specifies the profit mutliplier you want to add to the bid price for COMMON (white) quality items when the auto-buyout option is enabled" },
-    BuyoutCommonMultiplier  = { DF=         2, MI=   1, MA=   1000, SD="Buyout multiplier for common items" ,    LD="Specifies the profit mutliplier you want over the recommended bid price for COMMON (white) quality items when the auto-buyout option is enabled" },
-    BuyoutEpicMultiplier    = { DF=       100, MI=   1, MA=   1000, SD="Buyout multiplier for epic items",       LD="Specifies the profit mutliplier you want over the recommended bid price for EPIC (purple) quality when the auto-buyout option is enabled" },
-    BuyoutRareMultiplier    = { DF=        10, MI=   1, MA=   1000, SD="Buyout multiplier for rare items",       LD="Specifies the profit mutliplier you want over the recommended bid price for RARE (blue) quality items when the auto-buyout option is enabled" },
-    BuyoutUncommonMultiplier= { DF=         2, MI=   1, MA=   1000, SD="Buyout multiplier for uncommon items",   LD="Specifies the profit mutliplier you want over the recommended bid price for UNCOMMON (green) quality items when the auto-buyout option is enabled" },
-    DefaultFileName         = { DF="Untitled",                      SD="Default notes filename",                 LD="Default notes filename" },
-    DuraReportThreshold     = { DF=        95, MI=   0, MA=    100, SD="Durability report threshold",            LD="If durability falls below this threshold percentage, then a message will be displayed in the chat" },
-    DialogOpacity           = { DF=       100, MI=   1, MA=    100, SD="MhMod Dialog Opacity",                   LD="The percentage of opacity to apply to the MhMod Dialogs" },
-    FloodLinesMax           = { DF=         6, MI=   2, MA=    100, SD="Maximum text flood lines allowed",       LD="Maximum number of lines allowed before blocking a player for flooding" },
-    FloodLineTime           = { DF=         3, MI=   1, MA=     10, SD="Seconds between lines allowed",          LD="Seconds cooldown before the number of flood lines for a player is reset" },
-    FloodTimeOut            = { DF=        60, MI=   5, MA=  86400, SD="Timeout before player is removed",       LD="Timeout before a player's flooding data is completely removed" },
-    FriendsAutoRefreshTime  = { DF=        30, MI=  10, MA=     60, SD="Friends list auto-refresh interval",     LD="The interval in seconds for each friends and guild list automatic updates. A higher value will make the track friends option less accurate whereas a lower value will make it more accurate, but require more processing by your computer!" },
-    HideRepBarTimeout       = { DF=         0, MI=  60, MA=  86400, SD="Timeout before hiding reputation bar",   LD="Seconds to wait before automatically hiding the reputation bar (0 = disable)" },
-    LogDialogItemIntervals  = { DF=      3600, MI=  60, MA=2592000, SD="Log dialog date sorting interval",       LD="The interval in seconds that records are sorted into when viewing available logs in the dialog (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! LOWER values will require more CPU and memory resources. Use with care!" },
-    LogEntryPersistanceTime = { DF=     86400, MI=  60, MA=2592000, SD="Log entry persistance time",             LD="The amount of time in seconds that entries are kept in your log before they are deleted (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! HIGHER values will require more CPU and memory resources. Use with care!" },
-    LogEntryPruneRate       = { DF=         0, MI=   0, MA=      1, SD="Log pruning rate",                       LD="The amount of time in seconds when each log entry is checked. It is recommended you leave this at zero, but may experience slight lag when the logs are being cleaned up. Remember you can use fractions for this value" },
-    LogEntryPruneCount      = { DF=       100, MI=   1,             SD="Log prune count per tick",               LD="When the log pruning rate timer has ticked, this is the number of log records are scanned and removed during this event. If this value is too high then you may experience performance issues and if this value is too low, the pruning process might end prematurely if there are many log entries" },
-    LogPruningIntervalTime  = { DF=      3600, MI=  60, MA=2592000, SD="Log prune interval time",                LD="The amount of time in seconds before checking the log database for out-of-date entries (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! Setting really low or high values will compromise the performance of the game!" },
-    LowHealthThreshold      = { DF=        10, MI=   1, MA=     25, SD="Percent threshold before out-of-health", LD="Threshold to pass before you /healme" },
-    LowManaThreshold        = { DF=        25, MI=   1, MA=     25, SD="Percent threshold before out-of-mana",   LD="Threshold to pass before you /oom" },
-    LowStatWhineInterval    = { DF=        10, MI=   1,             SD="Time to wait between low stat emotes",   LD="Minimum seconds to wait before you /oom or /healme again" },
-    MaxChatHistory          = { DF=      1024, MI= 128, MA=  16384, SD="Chat history back-buffer lines",         LD="Maximum number of chat history backlog lines (Requires UI reset)" },
-    MinimapButtonX          = { DF=87.7144122, MI=-100, MA=    100, SD="Default button X position",              LD="X position of minimap button. Best to just adjust this properly by just dragging the minimap button" },
-    MinimapButtonY          = { DF=-37.140157, MI=-100, MA=    100, SD="Default button Y position",              LD="Y position of minimap button. Best to just adjust this properly by just dragging the minimap button" },
-    OverrideChatFontSize    = { DF=         0, MI=   0, MA=     72, SD="Chat frame font size override",          LD="Allows you to override the default chat frame font size. Set to 0 to disable this feature" },
-    PublicCommandsDisabled  = { DF="None",                          SD="Public commands disabled",               LD="A space separated list of public commands which you don't want anyone to use (i.e. 'lag help')" },
-    TooltipRefreshInterval  = { DF=         1, MI= 0.5, MA=     10, SD="Tooltip target info refresh rate",       LD="The rate in seconds for when the target tooltip info is refreshed" },
-    WhisperInformExemptTime = { DF=       500, MI=   5, MA=   3600, SD="Whisper exempt time",                    LD="When block whispers and Exclude whisper targets is enabled, this is the time in seconds before the last whisper message you sent can no longer can be replied to" },
-    RaidFrameScale          = { DF=         1, MI= 0.1, MA=      2, SD="Default raid frame scale",               LD="Use this to rescale the default raid frame size" },
-    StatPruningTime         = { DF=     86400, MI=  60,             SD="Personal stats prune time",              LD="The amount of time in seconds before expiring entries in the personal stats database (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! Setting really low or high values will compromise the performance of the game!" },
-    GroupTrackPruningTime   = { DF=    604800, MI=  60,             SD="Group tracker prune time",               LD="The amount of time in seconds before expiring entries in the group tracker database (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! Setting really low or high values will compromise the performance of the game!" },
+    dalfgd = { DF=     sNull,                      SD="Automatic LFG description message",      LD="When this is not empty, the text specified will be automatically entered into the LFG description box and automatically accepted. The setting 'autoall' must be enabled for this to work" },
+    damet  = { DF=       300, MI=   1, MA=   3600, SD="Timeout limit for AFK msg anti-spam",    LD="Seconds to wait before a DND or AFK auto-reply message is displayed again" },
+    darti  = { DF=         1, MI=   1, MA=      8, SD="Default auto-target raid icon",          LD="Changes the icon used for auto-marking. 1=Star, 2=Circle, 3=Diamond, 4=Triangle, 5=Moon, 6=Square, 7=Cross or 8=Skull" },
+    dasr   = { DF=         5, MI=   1, MA=     10, SD="Automatic sell rate per update",         LD="Because Blizzard recently started limiting the amount of items you can sell at once using a script, this value allows you to fine tune how many items are sold at once" },
+    dbgalt = { DF=       120, MI=   0, MA=    120, SD="Battleground auto-leave time",           LD="Specifies the number of seconds before automatically leaving a battleground" },
+    ddfn   = { DF="Untitled",                      SD="Default notes filename",                 LD="Default notes filename" },
+    ddrt   = { DF=        95, MI=   0, MA=    100, SD="Durability report threshold",            LD="If durability falls below this threshold percentage, then a message will be displayed in the chat" },
+    ddo    = { DF=       100, MI=   1, MA=    100, SD="MhMod Dialog Opacity",                   LD="The percentage of opacity to apply to the MhMod Dialogs" },
+    dflm   = { DF=         6, MI=   2, MA=    100, SD="Maximum text flood lines allowed",       LD="Maximum number of lines allowed before blocking a player for flooding" },
+    dflt   = { DF=         3, MI=   1, MA=     10, SD="Seconds between lines allowed",          LD="Seconds cooldown before the number of flood lines for a player is reset" },
+    dfto   = { DF=        60, MI=   5, MA=  86400, SD="Timeout before player is removed",       LD="Timeout before a player's flooding data is completely removed" },
+    dfart  = { DF=        30, MI=  10, MA=     60, SD="Friends list auto-refresh interval",     LD="The interval in seconds for each friends and guild list automatic updates. A higher value will make the track friends option less accurate whereas a lower value will make it more accurate, but require more processing by your computer!" },
+    dldii  = { DF=      3600, MI=  60, MA=2592000, SD="Log dialog date sorting interval",       LD="The interval in seconds that records are sorted into when viewing available logs in the dialog (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! LOWER values will require more CPU and memory resources. Use with care!" },
+    dlept  = { DF=     86400, MI=  60, MA=2592000, SD="Log entry persistance time",             LD="The amount of time in seconds that entries are kept in your log before they are deleted (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! HIGHER values will require more CPU and memory resources. Use with care!" },
+    dlepr  = { DF=         0, MI=   0, MA=      1, SD="Log pruning rate",                       LD="The amount of time in seconds when each log entry is checked. It is recommended you leave this at zero, but may experience slight lag when the logs are being cleaned up. Remember you can use fractions for this value" },
+    dlepc  = { DF=       100, MI=   1,             SD="Log prune count per tick",               LD="When the log pruning rate timer has ticked, this is the number of log records are scanned and removed during this event. If this value is too high then you may experience performance issues and if this value is too low, the pruning process might end prematurely if there are many log entries" },
+    dlpit  = { DF=      3600, MI=  60, MA=2592000, SD="Log prune interval time",                LD="The amount of time in seconds before checking the log database for out-of-date entries (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! Setting really low or high values will compromise the performance of the game!" },
+    dlht   = { DF=        10, MI=   1, MA=     25, SD="Percent threshold before out-of-health", LD="Threshold to pass before you /healme" },
+    dlmt   = { DF=        25, MI=   1, MA=     25, SD="Percent threshold before out-of-mana",   LD="Threshold to pass before you /oom" },
+    dlswi  = { DF=        10, MI=   1,             SD="Time to wait between low stat emotes",   LD="Minimum seconds to wait before you /oom or /healme again" },
+    dmch   = { DF=      1024, MI= 128, MA=  16384, SD="Chat history back-buffer lines",         LD="Maximum number of chat history backlog lines (Requires UI reset)" },
+    dmbx   = { DF=87.7144122, MI=-100, MA=    100, SD="Default button X position",              LD="X position of minimap button. Best to just adjust this properly by just dragging the minimap button" },
+    dmby   = { DF=-37.140157, MI=-100, MA=    100, SD="Default button Y position",              LD="Y position of minimap button. Best to just adjust this properly by just dragging the minimap button" },
+    docfs  = { DF=         0, MI=   0, MA=     72, SD="Chat frame font size override",          LD="Allows you to override the default chat frame font size. Set to 0 to disable this feature" },
+    dpcd   = { DF="None",                          SD="Public commands disabled",               LD="A space separated list of public commands which you don't want anyone to use (i.e. 'lag help')" },
+    dtri   = { DF=         1, MI= 0.5, MA=     10, SD="Tooltip target info refresh rate",       LD="The rate in seconds for when the target tooltip info is refreshed" },
+    dwiet  = { DF=       500, MI=   5, MA=   3600, SD="Whisper exempt time",                    LD="When block whispers and Exclude whisper targets is enabled, this is the time in seconds before the last whisper message you sent can no longer can be replied to" },
+    drfs   = { DF=         1, MI= 0.1, MA=      2, SD="Default raid frame scale",               LD="Use this to rescale the default raid frame size" },
+    dspt   = { DF=     86400, MI=  60,             SD="Personal stats prune time",              LD="The amount of time in seconds before expiring entries in the personal stats database (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! Setting really low or high values will compromise the performance of the game!" },
+    dgtpt  = { DF=    604800, MI=  60,             SD="Group tracker prune time",               LD="The amount of time in seconds before expiring entries in the group tracker database (60 = 1min, 3600 = 1hour, 86400 = 1day, 604800 = 1wk, 2592000 = 1mth). Warning! Setting really low or high values will compromise the performance of the game!" },
   }
 };
 -- == All the available output methods =======================================
@@ -628,7 +611,7 @@ local OutputMethodData = {
 -- * A[5] = The alternative skill name if K is nil (string)
 -- ----------------------------------------------------------------------------
 local CombatStatsEventsData = {
-  -- EVENT_NAME / InternalName      C      S      K      H       A
+  -- EVENT_NAME = { InternalName = { C, S, K, H, A } }
   SWING_DAMAGE = {
     { MD   = { false,    12, false, false, "Melee" },
       TD   = { false,    12, false, false, false },
@@ -852,8 +835,8 @@ local BGYellData = {
   },
 };
 -- == Main frame events =======================================================
-EventsData =
-{ -- Player entering world and all character data loaded ---------------------
+EventsData = {
+  -- Player entering world and all character data loaded ---------------------
   PLAYER_ENTERING_WORLD = function()
     -- Loading finished
     bLoading = false;
@@ -869,7 +852,7 @@ EventsData =
     -- Show durability information if requested
     if SettingEnabled("showdur") then
       local nCurrent, nMaximum, nPercent = GetDurability();
-      if nCurrent and nPercent <= GetDynSetting("DuraReportThreshold") then
+      if nCurrent and nPercent <= GetDynSetting("ddrt") then
         local oColour;
         if     nPercent > 50 then oColour = { r=0.0, g=1.0, b=0.0 };
         elseif nPercent > 25 then oColour = { r=0.5, g=0.5, b=0.0 };
@@ -883,33 +866,27 @@ EventsData =
     -- Just trigger regular update timer if interface already initialised
     if InitsData.Interface then return TriggerTimer("FART") end;
     -- Create timer to trigger every so often to update data and maintenence
-    CreateTimer(GetDynSetting("FriendsAutoRefreshTime"), function()
+    CreateTimer(GetDynSetting("dfart"), function()
       -- Update friends list
--- FIXME      ShowFriends();
+      C_FriendList.ShowFriends();
       -- Update guild members list
       if IsInGuild() then C_GuildInfo.GuildRoster() end;
       -- Get current time
       local nTime = GetTime();
-      -- Remove reputation bar if automatically enabled by the addon
-      if GetWatchedFactionInfo() and
-        (nAutoCloseRepBarTime == -1 or nTime >= nAutoCloseRepBarTime) then
-        nAutoCloseRepBarTime = -1;
-        SetWatchedFactionIndex(0);
-      end
       -- Done if chat log doesn't need pruning
       if bLoading or GetTimer("CLPT") or nTime - nChatLogLastPruned <
-        GetDynSetting("LogPruningIntervalTime") then return end;
+        GetDynSetting("dlpit") then return end;
       -- Get time where log entries should be removed
-      local nLimit = time() - GetDynSetting("LogEntryPersistanceTime");
+      local nLimit = time() - GetDynSetting("dlept");
       -- Get first log category and if we have it?
       local sCat, aCat = next(mhclog);
       if sCat and aCat then
         -- Get number of items to prune per timer tick
-        local iCount = GetDynSetting("LogEntryPruneCount");
+        local iCount = GetDynSetting("dlepc");
         -- Get first log entry
         local iRecord = next(aCat);
         -- Create a timer to process each log entry
-        CreateTimer(GetDynSetting("LogEntryPruneRate"), function()
+        CreateTimer(GetDynSetting("dlepr"), function()
           -- Until we've reached the count
           for iI = 1, iCount do
             -- If we have the entry
@@ -955,7 +932,7 @@ EventsData =
     EventsData.UPDATE_BATTLEFIELD_STATUS();
     EventsData.CALENDAR_UPDATE_EVENT_LIST();
     UnitEventsData.player.PLAYER_FLAGS_CHANGED();
--- FIXME    RequestArtifactCompletionHistory();
+    -- FIXME    RequestArtifactCompletionHistory();
   end,
   -- Player leaving world ----------------------------------------------------
   PLAYER_LEAVING_WORLD = function()
@@ -1265,8 +1242,12 @@ EventsData =
       local nPX, nPY = aData:GetXY();
       -- Set text to white
       MinimapZoneText:SetTextColor(1, 1, 1);
+      -- Get zone
+      local sZone = GetSubZoneText();
+      if not sZone or #sZone == 0 then sZone = GetZoneText() end;
       -- Update text to player co-ordinates
-      MinimapZoneText:SetText(format("%.01f, %.01f", nPX*100, nPY*100));
+      MinimapZoneText:SetText(format("%.01f, %.01f |cff00ff00(%s)",
+        nPX*100, nPY*100, sZone));
     end, nil, "PSM", true);
   end,
   -- Player stopped moving ---------------------------------------------------
@@ -1309,22 +1290,10 @@ EventsData =
   GOSSIP_SHOW = function()
     -- Ignore automation if shift is pressed or automation setting is disabled
     if IsShiftKeyDown() or not SettingEnabled("autoslq") then return end;
-    -- Get gossip options and if theres any?
-    local QA = C_GossipInfo.GetOptions();
-    if #QA > 0 then
-      -- Walk through each gossip option
-      for iIndex = 1, #QA do
-        -- Get gossip item and select it if its for quest progress
-        local aOption = QA[iIndex];
-        if aOption.name:sub(1, 11) == "|cFF0000FF(" then
-          -- Select this option and return
-          return C_GossipInfo.SelectOption(aOption.gossipOptionID);
-        end
-      end
-    end
     -- If control is held down then we should just search for gossip options
     if IsControlKeyDown() then
       -- Walk through each gossip option again
+      local QA = C_GossipInfo.GetOptions();
       for iIndex = 1, #QA do
         -- Get quest item and select it if selectable
         local aOption = QA[iIndex];
@@ -1370,134 +1339,168 @@ EventsData =
         end
       end
     end
+    -- Get gossip options and if theres any?
+    local QA = C_GossipInfo.GetOptions();
+    if #QA > 0 then
+      -- Walk through each gossip option
+      for iIndex = 1, #QA do
+        -- Get gossip item and select it if its for quest progress
+        local aOption = QA[iIndex];
+        if aOption.name:sub(1, 11) == "|cFF0000FF(" then
+          -- Select this option and return
+          return C_GossipInfo.SelectOption(aOption.gossipOptionID);
+        end
+      end
+    end
   end,
   -- Quest log updated -------------------------------------------------------
-  QUEST_LOG_UPDATE = function()
-    local QuestDataNew = { };
-    for QuestIndex = 1, C_QuestLog.GetNumQuestLogEntries() do
-      local QuestId = C_QuestLog.GetQuestIDForLogIndex(QuestIndex);
-      if QuestId > 0 then
-        local QuestIsComplete = C_QuestLog.IsComplete(QuestId);
-        local Data = {
-          N = QuestIndex,
-          I = QuestId,
-          O = { },
-          W = C_QuestLog.GetQuestWatchType(QuestIndex) ~= nil,
-          C = not not QuestIsComplete
-        };
-        QuestDataNew[QuestId] = Data;
-        Data = Data.O;
-        for iObjI, aObj in ipairs(C_QuestLog.GetQuestObjectives(QuestId)) do
-          Data[iObjI] = aObj;
+  QUEST_LOG_UPDATE = function(...)
+    -- Namespace and function aliases
+    local nsQL = C_QuestLog;
+    assert(type(nsQL)=="table", "C_QuestLog?");
+    local funcGNQLE = nsQL.GetNumQuestLogEntries;
+    assert(type(funcGNQLE)=="function", "C_QuestLog.GetNumQuestLogEntries?");
+    local funcGQIFLI = nsQL.GetQuestIDForLogIndex;
+    assert(type(funcGQIFLI)=="function", "C_QuestLog.GetQuestIDForLogIndex?");
+    local funcGQWT = nsQL.GetQuestWatchType;
+    assert(type(funcGQWT)=="function", "C_QuestLog.GetQuestWatchType?");
+    local funcIC = nsQL.IsComplete;
+    assert(type(funcIC)=="function", "C_QuestLog.IsComplete?");
+    local funcIF = nsQL.IsFailed;
+    assert(type(funcIF)=="function", "C_QuestLog.IsFailed?");
+    local funcGQO = nsQL.GetQuestObjectives
+    assert(type(funcGQO)=="function", "C_QuestLog.GetQuestObjectives?");
+    -- Override original function
+    EventsData.QUEST_LOG_UPDATE = function()
+      -- New quest data that will be set
+      local aNew = { };
+      -- Enumerate through the players quest log
+      for iLogIndex = 1, funcGNQLE() do
+        -- Convert quest log index to unique quest index and if valid?
+        local iUniqueIndex = funcGQIFLI(iLogIndex);
+        if iUniqueIndex > 0 then
+          -- Add quest data to new table
+          aNew[iUniqueIndex] = {
+            C = not not funcIC(iUniqueIndex),
+            F = not not funcIF(iUniqueIndex),
+            I = iUniqueIndex,
+            N = iLogIndex,
+            O = funcGQO(iUniqueIndex),
+            W = not not funcGQWT(iLogIndex)
+          };
         end
       end
-    end
-    if not InitsData.Quests then
-      InitsData.Quests = true;
-      QuestData = QuestDataNew;
-      return
-    end
-    local ProgressReport = SettingEnabled("autoaqs");
-    local OnlyWatched = SettingEnabled("autoaqw");
-    for Quest, QuestTable in pairs(QuestDataNew) do
-      local OldQuestData = QuestData[Quest];
-      if OldQuestData then
-        local OldObjectivesData = OldQuestData.O;
-        for Objective, ObjectiveTable in pairs(QuestTable.O) do
-          if OldObjectivesData[Objective] and ProgressReport and
-            (not OnlyWatched or (OnlyWatched and QuestTable.W)) then
-            local OldObjectiveData = OldObjectivesData[Objective];
-            if(ObjectiveTable.numFulfilled and
-               OldObjectiveData.numFulfilled and
-               ObjectiveTable.numFulfilled >
-                 OldObjectiveData.numFulfilled) or
-              (ObjectiveTable.finished and not
-                 OldObjectiveData.finished) then
-              local Objective, ObjectiveLink = ObjectiveTable.text;
-              if Objective then
-                _, ObjectiveLink = GetItemInfo(Objective);
-                if not ObjectiveLink then
-                  ObjectiveLink = "["..Objective.."]";
+      -- If quests not initialised yet?
+      if not InitsData.Quests then
+        -- Set initialised and return (don't check for new quests)
+        InitsData.Quests = true;
+        QuestData = aNew;
+        return
+      end
+      -- Get current settings
+      local ProgressReport = SettingEnabled("autoaqs");
+      local OnlyWatched = SettingEnabled("autoaqw");
+      local AutoShare = SettingEnabled("autosaq");
+      -- Walk through new quests table
+      for Quest, QuestTable in pairs(aNew) do
+        local OldQuestData = QuestData[Quest];
+        if OldQuestData then
+          local OldObjectivesData = OldQuestData.O;
+          for Objective, ObjectiveTable in pairs(QuestTable.O) do
+            if OldObjectivesData[Objective] and ProgressReport and
+              (not OnlyWatched or (OnlyWatched and QuestTable.W)) then
+              local OldObjectiveData = OldObjectivesData[Objective];
+              if(ObjectiveTable.numFulfilled and
+                 OldObjectiveData.numFulfilled and
+                 ObjectiveTable.numFulfilled >
+                   OldObjectiveData.numFulfilled) or
+                (ObjectiveTable.finished and not
+                   OldObjectiveData.finished) then
+                local Objective, ObjectiveLink = ObjectiveTable.text;
+                if Objective then
+                  _, ObjectiveLink = GetItemInfo(Objective);
+                  if not ObjectiveLink then
+                    ObjectiveLink = "["..Objective.."]";
+                  end
+                else
+                  ObjectiveLink = "["..ObjectiveName.."]";
                 end
-              else
-                ObjectiveLink = "["..ObjectiveName.."]";
+                local QuestLink = GetQuestLink(QuestTable.I);
+                local Message = "<";
+                if ObjectiveTable.numFulfilled and
+                   ObjectiveTable.numRequired and
+                   not ObjectiveTable.finished then
+                  Message = Message.."(Progress)";
+                else
+                  Message = Message.."(Done!)";
+                  PlaySound(SOUNDKIT.UI_QUEST_ROLLING_FORWARD_01);
+                end
+                PlaySound(SOUNDKIT.IG_QUEST_LIST_SELECT);
+                SendChat(Message..ObjectiveLink..QuestLink..">");
               end
-              local QuestLink = GetQuestLink(QuestTable.I);
-              local Message = "<";
-              if ObjectiveTable.numFulfilled and
-                 ObjectiveTable.numRequired and
-                 not ObjectiveTable.finished then
-                Message = Message.."(Progress)";
-              else
-                Message = Message.."(Done!)";
-                PlaySound(SOUNDKIT.UI_QUEST_ROLLING_FORWARD_01);
-              end
-              PlaySound(SOUNDKIT.IG_QUEST_LIST_SELECT);
-              SendChat(Message..ObjectiveLink..QuestLink..">");
             end
           end
+        else
+          Message = "<"..MakeQuestPrettyName(QuestTable.N).." added to log";
+          if GroupData.D.C > 0 and AutoShare and
+              C_QuestLog.IsPushableQuest(QuestTable.N) then
+            C_QuestLog.SetSelectedQuest(QuestTable.N);
+            QuestLogPushQuest();
+            Message = Message.." and shared";
+          end
+          Print(Message..">", ChatTypeInfo.SYSTEM);
         end
-      else
-        Message = "<"..MakeQuestPrettyName(QuestTable.N).." added to log";
-        if GroupData.D.C > 0 and SettingEnabled("autosaq") and
-            C_QuestLog.IsPushableQuest(QuestTable.N) then
-          C_QuestLog.SetSelectedQuest(QuestTable.N);
-          QuestLogPushQuest();
-          Message = Message.." and shared";
-        end
-        Print(Message..">", ChatTypeInfo.SYSTEM);
       end
-    end
-    local AutoRemove = SettingEnabled("autorfq");
-    for Quest, QuestTable in pairs(QuestDataNew) do
-      local OldQuestData = QuestData[Quest];
-      if OldQuestData then
-        if QuestTable.C and QuestTable.C ~= OldQuestData.C then
-          local QuestLink = GetQuestLink(QuestTable.I);
-          local Report = ProgressReport and
-            (not OnlyWatched or (OnlyWatched and QuestTable.W));
-          if not QuestTable.C then
+      local AutoRemove = SettingEnabled("autorfq");
+      for Quest, QuestTable in pairs(aNew) do
+        local OldQuestData = QuestData[Quest];
+        if OldQuestData then
+          if QuestTable.F ~= OldQuestData.F then
             if AutoRemove then
               C_QuestLog.SelectQuestLogEntry(QuestTable.N);
               C_QuestLog.SetAbandonQuest();
               C_QuestLog.AbandonQuest();
             end
-            if Report then
-              SendChat("<"..QuestLink.." was failed!>");
+            if ProgressReport and (not OnlyWatched or QuestTable.W) then
+              SendChat("<"..MakeQuestPrettyName(QuestTable.I).." was failed!>");
             end
-          elseif Report then
-            local Message = QuestLink.." is now complete!";
-            SendChat("<"..Message..">");
-            HudMessage(Message, 1, 1, 0);
+            HudMessage(GetQuestLink(QuestTable.I).." was failed!", 1, 0, 0);
+          elseif QuestTable.C ~= OldQuestData.C then
+            if ProgressReport and (not OnlyWatched or QuestTable.W) then
+              SendChat("<"..MakeQuestPrettyName(QuestTable.I).." is complete!>");
+            end
             PlaySound(SOUNDKIT.IG_QUEST_LIST_COMPLETE);
+            HudMessage(GetQuestLink(QuestTable.I).." is complete!", 1, 1, 0);
           end
         end
       end
-    end
-    for Quest, QuestTable in pairs(QuestData) do
-      local NewQuestData = QuestDataNew[Quest];
-      if not NewQuestData then
-        Print("<"..MakeQuestPrettyNameId(QuestTable.I)..
-          " removed from log>", ChatTypeInfo.SYSTEM);
+      for Quest, QuestTable in pairs(QuestData) do
+        local NewQuestData = aNew[Quest];
+        if not NewQuestData then
+          Print("<"..MakeQuestPrettyNameId(QuestTable.I)..
+            " removed from log>", ChatTypeInfo.SYSTEM);
+        end
+      end
+      QuestData = aNew;
+      -- Any quest popups?
+      if GetNumAutoQuestPopUps() > 0 then
+        -- Can't accept when dead
+        if UnitIsDeadOrGhost('player') then return end;
+        -- Get auto quest info
+        local iId, iType = GetAutoQuestPopUp(1)
+        if iType == 'OFFER' then
+          if not SettingEnabled("autoaaq") then return end;
+          ShowQuestOffer(iId)
+        elseif iType == 'COMPLETE' then
+          if not SettingEnabled("autoqcm") then return end;
+          ShowQuestComplete(iId)
+        end
+        -- Done with the popup
+        RemoveAutoQuestPopUp(iId)
       end
     end
-    QuestData = QuestDataNew;
-    -- Any quest popups?
-    if GetNumAutoQuestPopUps() > 0 then
-      -- Can't accept when dead
-      if UnitIsDeadOrGhost('player') then return end;
-      -- Get auto quest info
-      local iId, iType = GetAutoQuestPopUp(1)
-      if iType == 'OFFER' then
-        if not SettingEnabled("autoaaq") then return end;
-        ShowQuestOffer(iId)
-      elseif iType == 'COMPLETE' then
-        if not SettingEnabled("autoqcm") then return end;
-        ShowQuestComplete(iId)
-      end
-      -- Done with the popup
-      RemoveAutoQuestPopUp(iId)
-    end
+    -- Call actual function
+    return EventsData.QUEST_LOG_UPDATE(...);
   end,
   -- Quest giver dialog (different from gossip_show, but why?) ---------------
   QUEST_GREETING = function()
@@ -1564,13 +1567,19 @@ EventsData =
        (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) and
        UnitCanAttack("player", "target") and not UnitIsPlayer("target") and
        not GetRaidTargetIndex("target") then
-      SetRaidTarget("target", GetDynSetting("AutoRaidTargetIcon"));
+      SetRaidTarget("target", GetDynSetting("darti"));
     end
+  end,
+  -- Cinematic started playing ------------------------------------------------
+  CINEMATIC_START = function()
+    if SettingEnabled("skipacs") and not IsShiftKeyDown() then
+      CinematicFrame_CancelCinematic() end;
   end,
   -- Movie started playing ----------------------------------------------------
   PLAY_MOVIE = function()
     -- Replace function and call it
-    if SettingEnabled("skipacs") then GameMovieFinished() end;
+    if SettingEnabled("skipacs") and not IsShiftKeyDown() then
+      CinematicFinished(Enum.CinematicType.GameMovie, true) end;
   end,
   -- The player died ---------------------------------------------------------
   PLAYER_DEAD = function()
@@ -1745,81 +1754,122 @@ EventsData =
   end,
   -- The faction log was updated ---------------------------------------------
   UPDATE_FACTION = function()
-    local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
     local FactionDataNew = { };
-    local FactionHeaderCurrent;
-    local FactionCount, FactionIndex = GetNumFactions(), 1;
-    local FactionCollapse = { };
-    while FactionIndex <= FactionCount do
-      local FactionName, _, _, FactionBottom, FactionTop, FactionTotal, _, _,
-        FactionIsHeader, FactionIsCollapsed, _, _, _, FactionId =
-          GetFactionInfo(FactionIndex);
-      if FactionId then
-        if FactionIsHeader then
-          FactionHeaderCurrent = FactionName;
-          if FactionIsCollapsed then
-            ExpandFactionHeader(FactionIndex);
-            FactionCount = GetNumFactions();
-            tinsert(FactionCollapse, FactionIndex);
+    local FactionItem = C_Reputation.GetFactionDataByIndex(1);
+    if FactionItem then
+      local FactionIndex, FactionHeaderCurrent = 1;
+      repeat
+        local FactionName = FactionItem.name;
+        local FactionID = FactionItem.factionID;
+        if FactionItem.isHeader then FactionHeaderCurrent = FactionName end;
+        local FactionRenownItem =
+          C_MajorFactions.GetMajorFactionRenownInfo(FactionID);
+        if FactionRenownItem then
+          local iLevel = FactionRenownItem.renownLevel;
+          local iUpper = FactionRenownItem.renownLevelThreshold;
+          local iCurrent = FactionRenownItem.renownReputationEarned;
+          local iBottom = (iLevel - 1) * iUpper;
+          local iTotalValue = iBottom + iCurrent;
+          local nPercent = iCurrent / iUpper * 100;
+          FactionDataNew[FactionName] = {
+            C = FactionHeaderCurrent,
+            CH = iUpper,
+            CV = iCurrent,
+            CP = nPercent,
+            I = FactionIndex,
+            M = true,
+            R = "Renown "..iLevel,
+            TB = iBottom,
+            TH = iUpper,
+            TV = iCurrent,
+            TP = nPercent,
+            U = FactionID,
+          };
+        else
+          local iBottom = FactionItem.currentReactionThreshold;
+          local iCurrent = FactionItem.currentStanding;
+          local iUpper = FactionItem.nextReactionThreshold;
+          local iCurrentValue = iCurrent - iBottom;
+          local iTotalValue = 43000 + iCurrent;
+          local iNext = iUpper - iBottom;
+          local aData = {
+            C  = FactionHeaderCurrent,
+            CH = iNext,
+            CV = iCurrentValue,
+            CP = iCurrentValue / iNext * 100,
+            I  = FactionIndex,
+            M  = false,
+            R  = FactionRankData[iBottom],
+            TB = 43000 + iBottom,
+            TH = 85000,
+            TV = iTotalValue,
+            TP = iTotalValue / 85000 * 100,
+            U  = FactionID,
+          };
+          local FactionPCurrent, FactionPTop =
+            C_Reputation.GetFactionParagonInfo(FactionID);
+          if FactionPCurrent then
+            aData.PC = FactionPCurrent;
+            aData.PV = FactionPCurrent % FactionPTop;
+            aData.PH = FactionPTop;
+            aData.PP = FactionPCurrent / FactionPTop * 100;
           end
+          FactionDataNew[FactionName] = aData;
         end
-        local FactionPCurrent, FactionPTop =
-          C_Reputation.GetFactionParagonInfo(FactionId);
-        FactionDataNew[FactionName] = {
-          I  = FactionIndex,  C  = FactionHeaderCurrent,
-          B  = FactionBottom, H  = FactionTop,
-          T  = FactionTotal,  R  = FactionRankData[FactionBottom],
-          U =  FactionId,     PT = FactionPCurrent,
-          PH = FactionPTop
-        };
-      end
-      FactionIndex = FactionIndex + 1;
+        FactionIndex = FactionIndex + 1;
+        FactionItem = C_Reputation.GetFactionDataByIndex(FactionIndex);
+      until not FactionItem;
     end
     if not InitsData.Faction then
       InitsData.Faction = true;
       FactionData = FactionDataNew;
       return;
     end
+    -- DebugTable(FactionData);
+    local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
     local Tracking = SettingEnabled("advtrak");
     local AutoTrack = SettingEnabled("autoswr");
     for Faction, FactionTable in pairs(FactionDataNew) do
       local FDATA = FactionData[Faction];
       if FDATA and Tracking and Faction ~= "Guild" then
-        if FactionTable.T ~= FDATA.T then
+        if FactionTable.TV ~= FDATA.TV then
           local Msg, Next, Amount;
-          if FactionTable.T < FDATA.T then
-            Msg = "Lost";
-            Amount = FDATA.T-FactionTable.T;
+          if FactionTable.TV < FDATA.TV then
+            if not FactionTable.M then
+              Next = FacitonTable.TV - FactionTAble.TB;
+              Msg = "Lost";
+              Amount = FDATA.TV - FactionTable.TV;
+            end
           else
-            Next = FactionTable.H - FactionTable.T;
+            Next = FactionTable.CH - FactionTable.CV;
             Msg = "Received";
-            Amount = FactionTable.T-FDATA.T;
+            Amount = FactionTable.TV - FDATA.TV;
           end
-          Msg = Msg.." "..BreakUpLargeNumbers(Amount).." REP! ("..Faction;
-          if FactionTable.R then Msg = Msg.."; "..FactionTable.R end;
-          if FactionTable.T < 42000 and FactionTable.T > -41000 then
-            Msg = Msg.."; "..
-              BreakUpLargeNumbers(FactionTable.T-FactionTable.B);
-            if Next then
-              Msg = Msg.."; "..RoundNumber((FactionTable.T-FactionTable.B)/
-                (FactionTable.H-FactionTable.B)*100, 2).."%; Next: "..
-                BreakUpLargeNumbers(Next);
-              local Count = Next / Amount;
-              if Count > 0 then
-                Msg = Msg.."; x"..BreakUpLargeNumbers(ceil(Count));
+          if Msg then
+            Msg = Msg.." "..BreakUpLargeNumbers(Amount).." REP! ("..Faction;
+            if FactionTable.R then Msg = Msg.."; "..FactionTable.R end;
+            if FactionTable.TV < FactionTable.TH then
+              Msg = Msg.."; "..BreakUpLargeNumbers(FactionTable.CV);
+              if Next then
+                Msg = Msg.."; "..RoundNumber(FactionTable.CP, 2).."%; Next: "..
+                  BreakUpLargeNumbers(Next);
+                local Count = ceil(Next / Amount);
+                if Count > 0 then
+                  Msg = Msg.."; x"..BreakUpLargeNumbers(Count);
+                end
               end
             end
+            Print(Msg..")", CFCColour);
           end
-          Print(Msg..")", CFCColour);
           if AutoTrack then AutoFactionData[FactionTable.I] = Amount end;
-        elseif FactionTable.PT and FactionTable.PT ~= FDATA.PT then
-          local AmountLevel = FactionTable.PT % FactionTable.PH;
+        elseif FactionTable.PC and FactionTable.PC ~= FDATA.PC then
+          local AmountLevel = FactionTable.PV;
           local Next, Amount =
             FactionTable.PH - AmountLevel,
-            FactionTable.PT - FDATA.PT;
+            FactionTable.PC - FDATA.PC;
           local Msg = "Received "..BreakUpLargeNumbers(Amount)..
             " PTS! ("..Faction.."; "..
-            RoundNumber(AmountLevel/FactionTable.PH*100, 2)..
+            RoundNumber(AmountLevel / FactionTable.PH * 100, 2)..
             "%; Next: "..BreakUpLargeNumbers(Next);
           local Count = Next / Amount;
           if Count > 0 then
@@ -1837,16 +1887,11 @@ EventsData =
           if Value > Highest then HighestId,Highest = Index,Value end;
         end
         if HighestId <= 0 then return end;
-        SetWatchedFactionIndex(HighestId);
-        nAutoCloseRepBarTime =
-          GetTime() + GetDynSetting("HideRepBarTimeout");
+        C_Reputation.SetWatchedFactionByIndex(HighestId);
         AutoFactionData = { };
       end, 1, "FactionCalculator");
     end
     FactionData = FactionDataNew;
-    for iI = #FactionCollapse, 1, -1 do
-      CollapseFactionHeader(FactionCollapse[iI]);
-    end
   end,
   -- An auto-complete quest was completed ------------------------------------
   QUEST_AUTOCOMPLETE = function(QuestID)
@@ -1998,7 +2043,7 @@ EventsData =
             NewBGScoresData.W.."Mono.ogg");
         end
       end
-      CreateTimer(GetDynSetting("BGAutoLeaveTime"), LeaveBattlefield, 1,
+      CreateTimer(GetDynSetting("dbgalt"), LeaveBattlefield, 1,
         "LBFT");
       if MeData then
         SendChat("<Score position "..MeData.RN.." of "..NewBGScoresData.C..
@@ -2128,22 +2173,24 @@ EventsData =
       -- Get member information
       local sName, sRank, iRank, iLevel, sClass, sZone, sNote, sONote,
         bOnline, iStatus, _, iAPoints, iARank, bMobile, bSoR, iRep =
-         GetGuildRosterInfo(iIndex)
-      -- Remove realm if it is mine
-      local sNewName, sNewRealm = sName:match("^(.-)%-(.+)$");
-      -- Make data
-      local aNewData = {
-        N  = sName,    RS = sRank,  RI = iRank,   L = iLevel,  C = sClass,
-        Z  = sZone,    NN = sNote,  NO = sONote,  O = bOnline, S = iStatus,
-        AP = iAPoints, AR = iARank, M  = bMobile, SR = bSoR,   R = iRep,
-        SN = sNewName, SR = sNewRealm, SM = sNewRealm == sRealm
-      };
-      -- Assign as name and insert as index
-      aNames[sName], aNames[sNewName] = aNewData, aNewData;
-      tinsert(aIndexes, aNewData);
-      -- Add user to connected or disconnected lists
-      if bOnline then tinsert(aConnected, aNewData);
-                 else tinsert(aDisconnected, aNewData) end;
+          GetGuildRosterInfo(iIndex);
+      if sName then
+        -- Remove realm if it is mine
+        local sNewName, sNewRealm = sName:match("^(.-)%-(.+)$");
+        -- Make data
+        local aNewData = {
+          N  = sName,    RS = sRank,  RI = iRank,   L = iLevel,  C = sClass,
+          Z  = sZone,    NN = sNote,  NO = sONote,  O = bOnline, S = iStatus,
+          AP = iAPoints, AR = iARank, M  = bMobile, SR = bSoR,   R = iRep,
+          SN = sNewName, SR = sNewRealm, SM = sNewRealm == sRealm
+        };
+        -- Assign as name and insert as index
+        aNames[sName], aNames[sNewName] = aNewData, aNewData;
+        tinsert(aIndexes, aNewData);
+        -- Add user to connected or disconnected lists
+        if bOnline then tinsert(aConnected, aNewData);
+                   else tinsert(aDisconnected, aNewData) end;
+      end
     end
     -- Set guild data
     GuildData = aNewData;
@@ -2198,7 +2245,7 @@ EventsData =
       -- Total number of battle.net friends
       local iFriendsBN = BNGetNumFriends();
       -- Get number of local friends and add to grand total
-      local iFriendsLocal = 0; -- FIXME GetNumFriends();
+      local iFriendsLocal = C_FriendList.GetNumFriends();
       -- Total number of local and battle.net friends
       local iFriendsTotal = iFriendsBN + iFriendsLocal;
       -- If we're tracking friends?
@@ -2208,9 +2255,16 @@ EventsData =
       -- For each battle.net friend
       for iI = 1, max(iFriendsBN, iFriendsLocal) do
         -- Get info about the local friend and if local friend is online?
-        local sIGName, iLv, sClass, sZone, bOnline, sStatus, sNote, _ =
-          GetFriendInfo(iI);
+        local aData = C_FriendList.GetFriendInfoByIndex(iI);
+        local bOnline = aData.connected;
         if bOnline then
+          local sIGName, iLv, sClass, sZone, sNote =
+            aData.name, aData.level, aData.className, aData.area,
+            aData.notes;
+          local sStatus = "ONLINE";
+          if aData.afk then sStatus = sStatus.."+AFK" end;
+          if aData.dnd then sStatus = sStatus.."+DND" end;
+          if aData.mobile then sStatus = sStatus.."+MOBILE" end;
           -- Set name and realm (local friends are always on my server)
           local sNameAndRealm = sIGName.."-"..sMyRealm;
           -- Prepare data
@@ -2221,38 +2275,42 @@ EventsData =
           tinsert(aNData, aData);
           -- Set note if we're tracking data and the player has not set a
           -- note for them already and user.S is online?
-          if bTrack and (#sNote == 0 or sNote:sub(1, 1) == "<") then
+          if bTrack and (not sNote or
+                             #sNote == 0 or
+                             sNote:sub(1, 1) == "<") then
             -- Set new message
             local sNew = "<"..iLv.." "..sClass.."; "..sTime.."; "..sZone..">";
             -- Set last known data for friend if it changed?
             if sNote ~= sNew then
               -- Set the new note
-              SetFriendNotes(iI, sNew);
+              C_FriendList.SetFriendNotes(sIGName, sNew);
               -- This will trigger another event so make sure we ignore it
               iIgnoreFriendsUpdates = iIgnoreFriendsUpdates + 1;
             end
           end
         end
         -- Get info about the battle.net friend and if they're online?
-        local iPId, sBNName, _, _, _, iBId, _, bOnline, _, _, _, _, sNote =
-          BNGetFriendInfo(iI);
-        if bOnline then
+        local aBNData = C_BattleNet.GetGameAccountInfoByID(iI);
+        if aBNData and aBNData.isOnline then
           -- Get info about the battle.net friend in-game status and if
           -- playing world of warcraft? We need the realm and zone as well
           -- because they are not updated instantly.
-          local _, sIGName, sClient, sRealm, _, _, _, sClass, _, sZone, iLv,
-            _, _, _, _, _, _, bAFK, bDND = BNGetGameAccountInfo(iBId);
-          if sIGName and sClient == BNET_CLIENT_WOW and
-              #sRealm > 0 and sZone then
+          sIGName = aBNData.characterName;
+          sRealm = aBNData.realmDisplayName;
+          if sIGName and
+             aBNData.clientProgram == BNET_CLIENT_WOW and
+             #sRealm > 0 and aBNData.areaName then
             -- Set name and realm
             local sNameAndRealm = sIGName.."-"..sRealm;
             -- Get status
             local sStatus;
-            if bAFK then sStatus = "<AFK>"
-            elseif bDND then sStatus = "<DND>" end;
+            if aBNData.isGameAFK then sStatus = "<AFK>"
+            elseif aBNData.isGameBusy then sStatus = "<DND>" end;
             -- Prepare data
-            local aData = { I=iI,L=iLv,O=bOnline,E=sNote,N=sIGName,B=sBNName,
-              R=sRealm,NR=sNameAndRealm,A=sZone,S=sStatus,BN=true };
+            local aData = { I = iI, L = iLv, O = bOnline, E = sNote,
+                            N = sIGName, B = aBNData.characterName, R = sRealm,
+                            NR = sNameAndRealm, A = sZone, S = sStatus,
+                            BN = true };
             -- Assign to data
             aNData[sNameAndRealm] = aData;
             tinsert(aNData, aData);
@@ -2265,7 +2323,7 @@ EventsData =
               -- Set last known data for friend if it changed?
               if sNote ~= sNew then
                 -- Set the new note
-                BNSetFriendNote(iPId, sNew);
+                C_BattleNet.BNSetFriendNote(iPId, sNew);
                 -- This will trigger another event so make sure we ignore it
                 iIgnoreFriendsUpdates = iIgnoreFriendsUpdates + 1;
               end
@@ -2494,7 +2552,7 @@ EventsData =
   end,
   -- Artifact power updated --------------------------------------------------
   ARTIFACT_XP_UPDATE = function()
-    -- Get new artifact data and return if not available
+    -- Get new artefact data and return if not available
     local iId, _, _, _, iXPTotal, iSpent, _, _, _, _, _, _, iTier =
       C_ArtifactUI.GetEquippedArtifactInfo();
     if not iId then return end;
@@ -2503,18 +2561,18 @@ EventsData =
       ArtifactBarGetNumArtifactTraitsPurchasableFromXP(iSpent,
         iXPTotal, iTier);
     -- Set and cache total
-    iArtifactXPTotal = iXPTotal;
+    iArtefactXPTotal = iXPTotal;
     -- Done if not initialised yet
-    if not InitsData.Artifact then InitsData.Artifact = true return end;
-    -- Done Ii there was no change in artifact xp
+    if not InitsData.Artefact then InitsData.Artefact = true return end;
+    -- Done Ii there was no change in artefact xp
     -- Calculate and cache gain (or loss)
     local iGain = iXPTotal - iXP;
-    iArtifactXPLast = iGain;
+    iArtefactXPLast = iGain;
     if iGain <= 0 then return end;
     -- Prepare message
     local sMsg = "Received "..FormatNumber(iGain)..
       " AXP! ("..GetItemInfo(iId).."; "..
-      RoundNumber(iXP/iMax*100, 2).."%; Next: "..FormatNumber(iXPNext);
+      RoundNumber(iXP/iXPMax*100, 2).."%; Next: "..FormatNumber(iXPNext);
     -- Calculate remaining count
     local nLeft = iXPNext/iGain;
     if nLeft > 0 then sMsg = sMsg.."; x"..FormatNumber(ceil(nLeft)) end;
@@ -2574,20 +2632,10 @@ EventsData =
       sMsg = sMsg.."; x"..FormatNumber(ceil(iHonourGainsLeft));
     end
     Print(sMsg..")", ChatTypeInfo.COMBAT_HONOR_GAIN);
-    FunctionHookData.
-      TextStatusBar_UpdateTextString(HonorWatchBar.OverlayFrame.Text);
+--    TextStatusBar_UpdateTextString(HonorWatchBar.OverlayFrame.Text);
   end,
   -- Exhaustion updated ------------------------------------------------------
   UPDATE_EXHAUSTION = function()
-  end,
-  -- The auction house dialog has been opened --------------------------------
-  AUCTION_HOUSE_SHOW = function()
-    if not SettingEnabled("autoflr") or BrowseMinLevel:GetText() ~= sNull or
-      BrowseMaxLevel:GetText() ~= sNull then return end;
-    if iLevel <= 5 then BrowseMinLevel:SetText("1");
-    else BrowseMinLevel:SetText(iLevel - 5) end;
-    BrowseMaxLevel:SetText(iLevel);
-    IsUsableCheckButton:SetChecked(true);
   end,
   -- Asked to pickup BoP item ------------------------------------------------
   LOOT_BIND_CONFIRM = function()
@@ -2720,7 +2768,7 @@ EventsData =
           if Value == 1 then Value = sNull;
           else Value = "x"..BreakUpLargeNumbers(Value) end
           local Name, _, _, _, Extra = GetArchaeologyRaceInfo(ItemId);
-          local sMsg = What.." ".."artifact |Hspell:80451|h|cffffafff["..Name..
+          local sMsg = What.." ".."artefact |Hspell:80451|h|cffffafff["..Name..
             "]|r|h"..Value.." (Total: "..BreakUpLargeNumbers(ItemCount);
           if Extra > 0 then
             sMsg = sMsg.."; Max: "..BreakUpLargeNumbers(Extra);
@@ -3046,10 +3094,10 @@ UnitEventsData = {
     if nCombatTime == 0 or bInDuel or not SettingEnabled("autoalh") or
       UnitIsDeadOrGhost("player") or
       (UnitHealth("player")/UnitHealthMax("player"))*100 >=
-      GetDynSetting("LowHealthThreshold") or
+      GetDynSetting("dlht") or
       GetTime() <= bLowHealth or not GetNearestUnit() then return end;
     DoEmote("healme");
-    bLowHealth = GetTime() + GetDynSetting("LowStatWhineInterval");
+    bLowHealth = GetTime() + GetDynSetting("dlswi");
   end,
   -- Player inventory has changed ---------------------------------------------
   UNIT_INVENTORY_CHANGED = function()
@@ -3063,7 +3111,7 @@ UnitEventsData = {
     end
     -- Use a timer so we don't have this triggered multiple times
     CreateTimer(0.5, function()
-      -- Cache updated artifact values
+      -- Cache updated artefact values
       EventsData.ARTIFACT_XP_UPDATE();
       -- Check item level
       local _, iEqILv = GetAverageItemLevel();
@@ -3110,8 +3158,7 @@ UnitEventsData = {
     elseif nAwayFromKeyboard ~= 0 then
       PassOnLoot(true);
       KillTimer("AFKT");
-      TextStatusBar_UpdateTextString(PlayerFrame.PlayerFrameContent.
-        PlayerFrameContentMain.ManaBarArea.ManaBar);
+      PlayerFrame_GetManaBar():UpdateTextString();
       ShowDelayedWhispers();
       nAwayFromKeyboard = 0;
     end
@@ -3140,10 +3187,10 @@ UnitEventsData = {
     if nCombatTime == 0 or bInDuel or not SettingEnabled("autoalm") or
       UnitPowerType("player") ~= 0 or UnitIsDeadOrGhost("player") or
       (UnitMana("player")/UnitManaMax("player"))*100 >=
-        GetDynSetting("LowManaThreshold") or
+        GetDynSetting("dlmt") or
       GetTime() <= bLowMana or not GetNearestUnit() then return end;
     DoEmote("oom");
-    bLowMana = GetTime() + GetDynSetting("LowStatWhineInterval");
+    bLowMana = GetTime() + GetDynSetting("dlswi");
   end },
   -----------------------------------------------------------------------------
   party1 = { UNIT_TARGET = function() UnitFrameUpdate(PartyMemberFrame1) end },
@@ -3254,7 +3301,7 @@ local ChatEventsData =                 -- Chat event hooks
         SendWhisper(User, "The command '"..Command.."' is invalid");
       else
         local sDCmds =
-          (GetDynSetting("PublicCommandsDisabled") or sNull):lower();
+          (GetDynSetting("dpcd") or sNull):lower();
         if #sDCmds > 0 and sDCmds ~= "none" then
           for _, sDCmd in pairs({ strsplit(" ", sDCmds) }) do
             if sDCmd == Command then
@@ -3286,7 +3333,7 @@ local ChatEventsData =                 -- Chat event hooks
     local Time = time();
     for Name, Data in pairs(AutoMsgData) do
       if Data.AFKUpdate and
-          Time - Data.AFKUpdate >= GetDynSetting("AutoMsgEntryTimeout") then
+          Time - Data.AFKUpdate >= GetDynSetting("damet") then
         if not Data.AFKUpdate then AutoMsgData[Name] = nil;
         else Data.AFKUpdate, Data.AFKMessage = nil end;
       end
@@ -3302,7 +3349,7 @@ local ChatEventsData =                 -- Chat event hooks
     local Time = time();
     for Name, Data in pairs(AutoMsgData) do
       if Data.DNDUpdate and
-          Time - Data.DNDUpdate >= GetDynSetting("AutoMsgEntryTimeout") then
+          Time - Data.DNDUpdate >= GetDynSetting("damet") then
         if not Data.DNDUpdate then AutoMsgData[Name] = nil;
         else Data.DNDUpdate, Data.DNDMessage = nil end;
       end
@@ -3516,7 +3563,7 @@ local ChatEventsData =                 -- Chat event hooks
       return 1;
     end
     if UserIsMe(User) then return 1 end;
-    WhisperExemptData[User] = time()+GetDynSetting("WhisperInformExemptTime");
+    WhisperExemptData[User] = time()+GetDynSetting("dwiet");
     return MakePrettyName("WHISPER_INFORM", Msg, User, Lang, Chan, Flag,
       MsgId);
   end,
@@ -3698,7 +3745,7 @@ DebugTable = function(TableName, String)
   end
   InternalShowTable(TableName, 0, MaxLevel or 10);
   FinishPack();
-  local sLines = "";
+  local sLines = sNull;
   for iI = 1, #LinePacks do
     sLines = sLines..LinePacks[iI];
   end
@@ -3710,9 +3757,8 @@ LocalCommandsData = {
   logout = Logout,
   quit = Quit,
   advert = function()
-    LocalCommandsData.garbcol();
-    SendChat("Using MhMod "..Version.Major.."."..Version.Minor..
-      Version.Extra.." by "..Version.Author.." at "..Version.WebsiteFull);
+    SendChat("Using MhMod v"..Version.Release..Version.Extra.." by "..
+      Version.Author.." at "..Version.WebsiteFull);
   end,
   lfg = function(sWhat)
     -- Show LFG frame
@@ -3734,19 +3780,8 @@ LocalCommandsData = {
     -- Set input text (user must click refresh)
     LFGListFrame.SearchPanel.SearchBox:SetText(sWhat);
   end,
-  garbcol = function(UserCalled)
-    if not UserCalled then
-      collectgarbage("collect");
-      return;
-    end
-    local MemoryBefore = collectgarbage("count");
-    collectgarbage("collect");
-    ShowMsg("Garbage collection recovered |cff7f7f7f"..
-      BreakUpLargeNumbers(MemoryBefore-collectgarbage("count"))..
-      " KB|r of wasted memory.");
-  end,
   editsetd = function(Arguments, ArgV, ArgC)
-    local CurrentDefault = GetDynSetting("DefaultFileName");
+    local CurrentDefault = GetDynSetting("ddfn");
     if ArgC <= 0 then
       return ShowInput("Please specify the default notes filename",
         "editsetd", CurrentDefault)
@@ -3755,20 +3790,20 @@ LocalCommandsData = {
     if CurrentDefault == NewDefault then
       return ShowMsg("No change was made to the default filename!");
     end
-    SetDynSetting("DefaultFileName", NewDefault);
+    SetDynSetting("ddfn", NewDefault);
     ShowMsg("A new default notes filename of |cff7f7f7f"..NewDefault..
       "|r has been set");
   end,
   editren = function(_, ArgV, ArgC)
     if ArgC <= 0 then
       return ShowInput("Please specify the notes file to rename",
-        "editren", GetDynSetting("DefaultFileName"));
+        "editren", GetDynSetting("ddfn"));
     end
     local Source = ArgV[1];
     local SourceData = mhnotes[Source];
     if not SourceData then
       return ShowMsg("The specified source filename of |cff7f7f7f"..Source..
-        "|r was not matched!", "editren", GetDynSetting("DefaultFileName"));
+        "|r was not matched!", "editren", GetDynSetting("ddfn"));
     end
     if ArgC <= 1 then
       return ShowInput("Please specify the new name of the notes file",
@@ -3792,13 +3827,13 @@ LocalCommandsData = {
   editdup = function(_, ArgV, ArgC)
     if ArgC <= 0 then
       return ShowInput("Please specify the notes file to duplicate", "editdup",
-        GetDynSetting("DefaultFileName"));
+        GetDynSetting("ddfn"));
     end
     local Source = ArgV[1];
     local SourceData = mhnotes[Source];
     if not SourceData then
       return ShowMsg("The specified source filename of |cff7f7f7f"..Source..
-        "|r was not matched!", "editdup", GetDynSetting("DefaultFileName"));
+        "|r was not matched!", "editdup", GetDynSetting("ddfn"));
     end
     if ArgC <= 1 then
       return ShowInput("Please specify the name of the duplicated notes file",
@@ -3822,16 +3857,16 @@ LocalCommandsData = {
     ShowInput("Please specify the notes file to open. "..
       "If you specify no file then the default is used. "..
       "Specify an invalid file to create a new one!",
-      "edit", GetDynSetting("DefaultFileName"));
+      "edit", GetDynSetting("ddfn"));
   end,
   editasro = function()
     ShowInput("Please specify the filename to view. "..
       "If you specify no file then the default is used. "..
       "Specify an invalid file and an error will occur!",
-      "editro", GetDynSetting("DefaultFileName"));
+      "editro", GetDynSetting("ddfn"));
   end,
   edit = function(Arguments, ArgV, ArgC)
-    local Variable = GetDynSetting("DefaultFileName");
+    local Variable = GetDynSetting("ddfn");
     if ArgC > 0 then Variable = ArgV[1] end;
     local Body = mhnotes[Variable];
     ShowDialog(Body or sNull, Variable, "EDITOR", function(Text, Var)
@@ -3840,7 +3875,7 @@ LocalCommandsData = {
     end);
   end,
   editro = function(Arguments, ArgV, ArgC)
-    local Variable = GetDynSetting("DefaultFileName");
+    local Variable = GetDynSetting("ddfn");
     if ArgC > 0 then Variable = ArgV[1] end;
     local Body = mhnotes[Variable];
     if not Body then
@@ -3920,17 +3955,16 @@ LocalCommandsData = {
         ParameterU.."|r\n\n|cffaaaaaaBrief description of variable...|r\n"..
         vardata.SD..".\n\n|cffaaaaaaDetailed description of variable...|r\n"..
         vardata.LD..".\n\n|cff00ff00This setting is currently set to|r "..
-        setting..".\n\n|cffaaaaaaTo toggle this setting, type|r "..
-        "|cff0000ff/"..Command.." "..Parameter..".|r.", "Help for setting "..
-          ParameterU,
-        "EDITOR");
+        setting..".\n\n|cffaaaaaaTo toggle this setting, type|r |cff0000ff/"..
+        ConfigData.Command.." "..Parameter..".|r.",
+        "Help for setting "..ParameterU, "EDITOR");
     else
       ShowMsg("The variable or command |cffaaaaaa"..Parameter..
         "|r is not recognised", "help");
     end
   end,
   iglclear = function(_, ArgV, ArgC)
-    local Count = 0; -- FIXME GetNumIgnores();
+    local Count = C_FriendList.GetNumIgnores();
     if Count <= 0 then
       ShowMsg("Your ignore list is empty!");
       return;
@@ -3941,14 +3975,14 @@ LocalCommandsData = {
         "ignore list?", "iglclear confirm");
     end
     for Index = 1, Count do
-      DelIgnore(GetIgnoreName(Index));
+      C_FriendList.DelIgnore(C_FriendList.GetIgnoreName(Index));
     end
     ShowMsg("A total of |cff7f7f7f"..Count.."|r players removed from your "..
       "ignore list!");
   end,
   frlclear = function(_, ArgV, ArgC)
-    local Count = GetNumFriends();
-    if Count <= 0 then
+    local iCount = C_FriendList.GetNumFriends();
+    if iCount <= 0 then
       ShowMsg("Your friends list is empty!");
       return;
     end
@@ -3957,35 +3991,36 @@ LocalCommandsData = {
         "entries will be deleted! Are you sure you want to reset your "..
         "friends list?", "frlclear confirm");
     end
-    for Index = 1, Count do RemoveFriend(GetFriendInfo(Index)) end;
-    ShowMsg("A total of |cff7f7f7f"..Count..
+    for Index = 1, iCount do
+      C_FriendList.RemoveFriend(
+        C_FriendList.GetFriendInfoByIndex(Index).name) end;
+    ShowMsg("A total of |cff7f7f7f"..iCount..
       "|r friends removed from your friends list!");
   end,
-  fnclear = function()
-    local Count = GetNumFriends();
-    if Count <= 0 then
+  fnclear = function(_, ArgV, ArgC)
+    local iCount = C_FriendList.GetNumFriends();
+    if iCount <= 0 then
       ShowMsg("Your friends list is empty!");
       return;
     end
     if ArgC <= 0 or ArgV[1] ~= "confirm" then
-      return ShowQuestion("A total of |cff7f7f7f"..Count..
+      return ShowQuestion("A total of |cff7f7f7f"..iCount..
         "|r friends notes will be cleared! "..
         "Are you sure you want to clear them?", "fnclear confirm");
     end
-    local D = 0;
-    for I=1, GetNumFriends() do
-      local PN, _, _, _, _, _, NO = GetFriendInfo(I);
-      if PN and NO then
-        SetFriendNotes(I, sNull);
-        Print(PN.."'s note of "..NO.." was cleared");
-        D = D + 1;
+    local iDone = 0;
+    for iFriendIndex = 1, iCount do
+      local aData = C_FriendList.GetFriendInfoByIndex(iFriendIndex);
+      if aData then
+        local sName, sNote = aData.name, aData.notes;
+        if sName and sNote and #sNote > 0 then
+          C_FriendList.SetFriendNotes(iFriendIndex, sNull);
+          iDone = iDone + 1;
+        end
       end
     end
-    if D > 0 then
-      ShowMsg("Notes were cleared from "..D.."friends");
-      return;
-    end
-    ShowMsg("No notes were cleared from any of your friends");
+    ShowMsg("A total of |cff7f7f7f"..iDone.."|r of |cff7f7f7f"..iCount..
+      "|r friend notes were removed.");
   end,
   playtime = function()
     RequestTimePlayed();
@@ -3993,8 +4028,8 @@ LocalCommandsData = {
   cmds = function()
     local M = "This is a full list of commands that MhMod Addon supports:\n"..
       "\nIf you want to use a command here, simply type "..
-      "|cff0000ff/"..Command.." <cmd>|r, where <cmd> is any of the commands "..
-      "in blue specified below...\n";
+      "|cff0000ff/"..ConfigData.Command.." <cmd>|r, "..
+      "where <cmd> is any of the commands in blue specified below...\n";
     local C = 0;
     local I = 0;
     for K, V in pairs(ConfigData.Commands) do
@@ -4011,8 +4046,8 @@ LocalCommandsData = {
   end,
   vars = function()
     local M = "This is a full list of variables that MhMod Addon supports:\n"..
-      "\nIf you want to toggle an option off or on, simply type "..
-      "|cff0000ff/"..Command.." <varname>|r, where <varname> is any of the "..
+      "\nIf you want to toggle an option off or on, simply type |cff0000ff/"..
+      ConfigData.Command.." <varname>|r, where <varname> is any of the "..
       "options in blue specified below...\n";
     local C, I, S = 0, 0;
     for K, V in pairs(ConfigData.Options) do
@@ -4062,9 +4097,7 @@ LocalCommandsData = {
       local Frame = _G["ChatFrame"..Index];
       if Frame ~= nil and Frame:IsVisible() then Frame:Clear() end;
     end
-    if UserCalled then
-      ShowMsg("All console text windows were cleared!");
-    end
+    if UserCalled then ShowMsg("All console text windows were cleared!") end;
   end,
   compact = function()
     BagItemAutoSortButton:Click(1);
@@ -4189,10 +4222,10 @@ LocalCommandsData = {
         if HealthBar then
           local HealthBarText = HealthBar.TextString;
           if HealthBarText then
-            HealthBarText:SetFont("fonts\\frizqt__.ttf", 10, "");
+            HealthBarText:SetFont("fonts\\frizqt__.ttf", 10, sNull);
             HealthBarText:SetShadowColor(0, 0, 0);
             HealthBarText:SetShadowOffset(1, -1);
-            FunctionHookData.TextStatusBar_UpdateTextString(HealthBar);
+            HealthBar:UpdateTextString();
           end
         end
         -- Setup mana bar text
@@ -4200,17 +4233,17 @@ LocalCommandsData = {
         if ManaBar then
           local ManaBarText = ManaBar.TextString;
           if ManaBarText then
-            ManaBarText:SetFont("fonts\\frizqt__.ttf", 10, "");
+            ManaBarText:SetFont("fonts\\frizqt__.ttf", 10, sNull);
             ManaBarText:SetShadowColor(0, 0, 0);
             ManaBarText:SetShadowOffset(1, -1);
-            FunctionHookData.TextStatusBar_UpdateTextString(ManaBar);
+            ManaBar:UpdateTextString();
           end
         end
         -- Update nameplate / target
         UnitFrameUpdate(Frame);
       end
       -- Initialise custom raid frame scale
-      CompactRaidFrameManager:SetScale(GetDynSetting("RaidFrameScale"));
+      CompactRaidFrameManager:SetScale(GetDynSetting("drfs"));
     end
     local function InitShiftClickFrameEnhancements()
       local ClickState = SettingEnabled("tsbrprt");
@@ -4226,10 +4259,10 @@ LocalCommandsData = {
         [17] = "fury",        [18] = "pain"
       }
       local function OnClicked(Self, Button)
-        if not IsShiftKeyDown() or GetMouseFocus() ~= Self then return end;
+        if not IsShiftKeyDown() or GetMouseFoci()[1] ~= Self then return end;
         if Self == ContainerFrame1MoneyFrameGoldButton or
-               Self == ContainerFrame1MoneyFrameSilverButton or
-               Self == ContainerFrame1MoneyFrameCopperButton then
+           Self == ContainerFrame1MoneyFrameSilverButton or
+           Self == ContainerFrame1MoneyFrameCopperButton then
           if Button ~= "RightButton" then return end;
           local M;
           if iMoneySession < 0 then
@@ -4320,10 +4353,10 @@ LocalCommandsData = {
             if UnitRace(Unit) then M = M.." "..UnitRace(Unit) end;
             if UnitClass(Unit) then M = M.." "..UnitClass(Unit) end;
           else
-            local Class = UnitClassification(Unit);
-            if Class and #Class > 0 then
-              Class = UnitClassificationTypesData[Class];
-              if Class and Class.F > 0 then M = M.."; "..Class.N end;
+            local sClass = UnitClassification(Unit);
+            if sClass and #sClass > 0 then
+              local aClass = UnitClassificationTypesData[sClass];
+              if aClass and aClass.F > 0 then M = M.."; "..aClass.N end;
             end
           end
           if UnitIsDeadOrGhost(Unit) then M = M.."; Dead" end;
@@ -4376,15 +4409,14 @@ LocalCommandsData = {
         local Frame = _G[ChatFrameName];
         if Frame then FunctionHookData.FCF_FadeInChatFrame(Frame) end;
       end
-      if GetDynSetting("OverrideChatFontSize") > 0 then
-        local Size = GetDynSetting("OverrideChatFontSize");
+      if GetDynSetting("docfs") > 0 then
+        local Size = GetDynSetting("docfs");
         for _, Frame in pairs(FCFDock_GetChatFrames(GENERAL_CHAT_DOCK)) do
           local Font, _, Flags = Frame:GetFont();
           Frame:SetFont(Font, Size, Flags);
         end
       end
     end
-
     local function InitOtherFrameEnhancements()
       if SettingEnabled("showbag") then
         MainMenuBarBackpackButtonCount:Hide();
@@ -4424,12 +4456,12 @@ LocalCommandsData = {
         if #TimerData > 0 then TimerData = { } end;
         -- If this is a new error or not the last error that occured
         if not LastErrorMessage or LastErrorMessage ~= Message then
-          if LastErrorMessage and LastErrorMessageCount > 0 then
-            local Msg = "Last error message occured "..LastErrorMessageCount..
+          if LastErrorMessage and
+             LastErrorMessageCount > 0 and
+             SettingEnabled("logchat") then
+            Log("ERROR", "Last error message occured "..LastErrorMessageCount..
               " more times in the last "..(time()-LastErrorMessageFirst)..
-              " seconds.";
-            if SettingEnabled("logchat") then Log("ERROR", Msg) end;
-            DEFAULT_CHAT_FRAME:AddMessage(Msg, 1, 0, 0);
+              " seconds.");
           end
           LastErrorMessageCount = 0;
           LastErrorMessageFirst = time();
@@ -4442,11 +4474,10 @@ LocalCommandsData = {
           LastErrorMessageCount = LastErrorMessageCount + 1;
           if LastErrorMessageCount >= 100 or
             time() - LastErrorMessageFirst >= 5 then
-            local Msg = "Last error message occured "..LastErrorMessageCount..
-              " more times in the last "..(time()-LastErrorMessageFirst)..
-              " seconds.";
-            if SettingEnabled("logchat") then Log("ERROR", Msg) end;
-            DEFAULT_CHAT_FRAME:AddMessage(Msg, 1, 0, 0);
+            if SettingEnabled("logchat") then
+              Log("ERROR", "Last error message occured "..
+                LastErrorMessageCount.." more times in the last "..
+                (time()-LastErrorMessageFirst).." seconds.") end;
             LastErrorMessageCount, LastErrorMessageFirst = 0, time();
           end
         end
@@ -4598,7 +4629,7 @@ LocalCommandsData = {
     ShowDialog("Chat log data for |cffaaaaaa"..Category..
       "|r,\nFrom |cffaaaaaa"..date("%d/%m/%y-%H:%M:%S", Start)..
       "|r to |cffaaaaaa"..date("%d/%m/%y-%H:%M:%S", Start+Duration)..
-      "|r...\n\n"..strjoin("", unpack(aLines)).."\nMatched |cffaaaaaa"..
+      "|r...\n\n"..strjoin(sNull, unpack(aLines)).."\nMatched |cffaaaaaa"..
       BreakUpLargeNumbers(#aLines).."|r of |cffaaaaaa"..
       BreakUpLargeNumbers(Total).."|r lines of text.",
       "Chat log for "..Category, "EDITOR");
@@ -4782,7 +4813,7 @@ LocalCommandsData = {
       ShowMsg("Please specify the addon to toggle", "tgaddon");
     end
     local Addon = ArgV[1];
-    local Name, Title, _, Enabled = GetAddOnInfo(Addon);
+    local Name, Title, _, Enabled = C_AddOns.GetAddOnInfo(Addon);
     if not Name then
       return ShowMsg("The addon |cffaaaaaa"..Addon..
         "|r is not currently loaded!", "tgaddon");
@@ -4796,10 +4827,10 @@ LocalCommandsData = {
         "tgaddon "..Addon.." confirm");
     end
     if Enabled then
-      DisableAddOn(Addon);
+      C_AddOns.DisableAddOn(Addon);
       ShowMsg("The addon |cffaaaaaa"..Addon.."|r has been disabled!");
     else
-      EnableAddOn(Addon);
+      C_AddOns.EnableAddOn(Addon);
       ShowMsg("The addon |cffaaaaaa"..Addon.."|r has been enabled!");
     end
     ReloadUI();
@@ -4808,68 +4839,104 @@ LocalCommandsData = {
     RestartGx();
     ShowMsg("Graphics engine restarted!");
   end,
+  dumpllqu = function(_, ArgV, ArgC)
+    if ArgC <= 0 or ArgV[1] ~= "confirm" then
+      return ShowQuestion("Are you sure you want to remove all "..
+        "|cffffff00low level|r quests?", "dumpllqu confirm");
+    end
+    local iMax, iCount = C_QuestLog.GetNumQuestLogEntries();
+    if iCount == 0 then
+      return ShowMsg("There are no dungeon quests to abandon!") end;
+    local iDumped = 0;
+    for QuestIndex = 1, C_QuestLog.GetNumQuestLogEntries() do
+      local QuestId = C_QuestLog.GetQuestIDForLogIndex(QuestIndex);
+      if QuestId > 0 then
+        if C_QuestLog.IsQuestTrivial(QuestId) then
+          C_QuestLog.SetSelectedQuest(QuestId);
+          C_QuestLog.SetAbandonQuest();
+          C_QuestLog.AbandonQuest();
+          iDumped = iDumped + 1;
+        end
+      end
+    end
+    ShowMsg("A total of |cff7f7f7f"..iDumped..
+      "|r low level quests were abandoned!");
+  end,
+  dumpduqu = function(_, ArgV, ArgC)
+    if ArgC <= 0 or ArgV[1] ~= "confirm" then
+      return ShowQuestion("Are you sure you want to remove all "..
+        "|cffffff00dungeon|r quests?", "dumpduqu confirm");
+    end
+    local iMax, iCount = C_QuestLog.GetNumQuestLogEntries();
+    if iCount == 0 then
+      return ShowMsg("There are no dungeon quests to abandon!") end;
+    local iDumped = 0;
+    for QuestIndex = 1, C_QuestLog.GetNumQuestLogEntries() do
+      local QuestId = C_QuestLog.GetQuestIDForLogIndex(QuestIndex);
+      if QuestId > 0 then
+        local QuestInfo = C_QuestLog.GetQuestTagInfo(QuestId);
+        if QuestInfo then
+          local Tag = QuestInfo.tagID;
+          -- https://wowpedia.fandom.com/wiki/API_C_QuestLog.GetQuestTagInfo
+          if Tag == 62 or              -- Raid
+             Tag == 81 or              -- Dungeon
+             Tag == 85 or              -- Heroic
+             Tag == 88 or              -- Raid (10)
+             Tag == 89 then            -- Raid (25)
+            C_QuestLog.SetSelectedQuest(QuestId);
+            C_QuestLog.SetAbandonQuest();
+            C_QuestLog.AbandonQuest();
+            iDumped = iDumped + 1;
+          end
+        end
+      end
+    end
+    ShowMsg("A total of |cff7f7f7f"..iDumped..
+      "|r dungeon quests were abandoned!");
+  end,
   dumpalqu = function(_, ArgV, ArgC)
     if ArgC <= 0 or ArgV[1] ~= "confirm" then
       return ShowQuestion("Are you sure you want to |cffffff00completely|r "..
         "clear your entire quest log?", "dumpalqu confirm");
     end
-    ClearQuests(1, true);
-  end,
-  dumphlqu = function(_, ArgV, ArgC)
-    if ArgC <= 0 or ArgV[1] ~= "confirm" then
-      return ShowQuestion("Are you sure you want to clear your quest log "..
-        "of all |cffff0000higher-level (red) quality|r quests?",
-        "dumphlqu confirm");
-    end
-    ClearQuests(UnitLevel("player") + 4, true);
-  end,
-  dumpllqu = function(_, ArgV, ArgC)
-    if ArgC <= 0 or ArgV[1] ~= "confirm" then
-      return ShowQuestion("Are you sure you want to clear your quest log of "..
-        "all |cff7f7f7flow-level (gray) quality|r quests?",
-        "dumpllqu confirm");
-    end
-    ClearQuests(UnitLevel("player") - GetQuestGreenRange(), false);
-  end,
-  showqu = function()
     local iMax, iCount = C_QuestLog.GetNumQuestLogEntries();
-    local sText, iNum, iDone = sNull, 0, 0;
-    for iIndex = 1, iMax do
-      local sTitle, iLevel, iGroup, bHeader, _, bComp, iFreq, iId =
-        C_QuestLog.GetTitleForLogIndex(iIndex);
-      if bHeader then
-        sText = sText.."* In area |cff0000ff"..sTitle.."|r...|n";
-      elseif iLevel > 0 then
-        if bComp then iDone = iDone + 1 end;
-        iNum = iNum + 1;
-        sText = sText..iNum..": "..MakeQuestPrettyName(iIndex).."|n";
-        for iOIndex = 1, GetNumQuestLeaderBoards(iIndex) do
-          local sOName, _, bComp = GetQuestLogLeaderBoard(iOIndex, iIndex);
-          if sOName then
-            local iOCur, iOMax, sODesc =
-              sOName:match("^(%d+)/(%d+)%s+(.+)");
-            if not sODesc then
-              iOCur, sODesc = sOName:match("^(%d+)%s+(.+)") end;
-            if not sODesc then
-              sODesc = sOName;
-            end
-            sText = sText.."+ |cffff00ff"..sODesc.."|r ";
-            if bComp then
-              sText = sText.."|cffffff00(Completed!)|r|n";
-            elseif iOMax then
-              sText = sText.."(|cff7f7f7f"..iOCur.." of "..iOMax..
-                "; "..RoundNumber(iOCur/iOMax*100, 2).."% complete!|r)|n";
-            elseif iOCur then
-              sText = sText.."(|cffffff00"..iOCur..
-                "; Incomplete!|r)|n";
-            else
-              sText = sText.."|cff7f7f7f(Incomplete!|r)|n";
-            end
-          end
-        end
+    if iCount == 0 then return ShowMsg("There are no quests to abandon!") end;
+    local iDumped = 0;
+    for QuestIndex = 1, C_QuestLog.GetNumQuestLogEntries() do
+      local QuestId = C_QuestLog.GetQuestIDForLogIndex(QuestIndex);
+      if QuestId > 0 then
+        C_QuestLog.SetSelectedQuest(QuestId);
+        C_QuestLog.SetAbandonQuest();
+        C_QuestLog.AbandonQuest();
+        iDumped = iDumped + 1;
       end
     end
-    ShowDialog(sText.."|nA total of |cff00ff00"..iCount..
+    ShowMsg("A total of |cff7f7f7f"..iDumped.."|r quests were abandoned!");
+  end,
+  showqu = function()
+    local iTotal, iDone, sText = 0, 0, sNull;
+    for iQuestId, QuestTable in SortedPairs(QuestData) do
+      iTotal = iTotal + 1;
+      sText = sText..iTotal..": ";
+      local aTag = C_QuestLog.GetQuestTagInfo(iQuestId);
+      sText = sText..GetQuestLink(iQuestId);
+      if aTag then sText = sText.." (|cff0000ff"..aTag.tagName.."|r)" end;
+      if QuestTable.C then
+        iDone = iDone + 1;
+        sText = sText.." <|cff00ff00Complete|r>";
+      else sText = sText.." <|cffff0000Incomplete|r>" end;
+      local Objectives = QuestTable.O;
+      if Objectives and #Objectives > 0 then
+        sText = sText.."...|n";
+        for Objective, ObjectiveTable in SortedPairs(QuestTable.O) do
+          sText = sText.." "..Objective..": "..ObjectiveTable.text.." <";
+          if ObjectiveTable.finished then
+            sText = sText.."|cff00ff00Complete|r>.|n";
+          else sText = sText.."|cffff0000Incomplete|r>.|n" end;
+        end
+      else sText = sText..".|n" end;
+    end
+    ShowDialog(sText.."|nA total of |cff00ff00"..iTotal..
       "|r quests (|cff00ff00"..iDone.."|r completed).",
       "Quest List", "EDITOR");
   end,
@@ -5130,7 +5197,7 @@ LocalCommandsData = {
         "1=|cffffff7fStar|r, 2=|cffff7f00Circle|r, 3=|cffff00ffDiamond|r, "..
         "4=|cff00ff00Triangle|r, 5=|cff7fafffMoon|r, 6=|cff007fffSquare|r, "..
         "7=|cffff0000Cross|r or 8=|cffffffffSkull|r.", "setricon",
-          GetDynSetting("AutoRaidTargetIcon"));
+          GetDynSetting("darti"));
     end
     local Value = tonumber(ArgV[1]);
     if not Value then
@@ -5143,7 +5210,7 @@ LocalCommandsData = {
         "|r is out of range. Please use a number between |cff00ff001|r and "..
         "|cff00ff008|r!", "setricon");
     end
-    SetDynSetting("AutoRaidTargetIcon", Value);
+    SetDynSetting("darti", Value);
     ShowMsg("The auto-raid target icon id has been set to |cff7f7f7f"..Value..
       "|r!");
   end,
@@ -5164,14 +5231,8 @@ LocalCommandsData = {
     DebugTable(MhMod.O, String);
     MhMod.O = nil;
   end,
-  findglobals = function(sArg)
-    if not sArg or #sArg <= 0 then return end;
-    for sKey in SortedPairs(_G) do
-      if sKey:sub(1, #sArg) == sArg then print(sKey) end;
-    end
-  end,
   mo = function()
-    local oFocus = GetMouseFocus();
+    local oFocus = GetMouseFoci()[1];
     local sRes;
     if          oFocus  == nil         then sRes = "Frame no found";
     elseif type(oFocus) ~= "table"     then sRes = "Frame not valid table";
@@ -5185,8 +5246,7 @@ LocalCommandsData = {
   end
 };
 -- == Public command system commands =========================================
-RemoteCommandsData =
-{
+RemoteCommandsData = {
   help = function(User)
     Print(MakePlayerLink(User).." requested the command list");
     local M = "Commands:";
@@ -5412,8 +5472,8 @@ RemoteCommandsData =
   end
 };
 -- == SECURE FUNCTION HOOKS ==================================================
-FunctionHookData =
-{ -- -------------------------------------------------------------------------
+FunctionHookData = {
+  -- -------------------------------------------------------------------------
   FCF_FadeInChatFrame = function(Frame)
     local Name = Frame:GetName();
     local Setting = SettingEnabled("hidechb");
@@ -5505,12 +5565,12 @@ FunctionHookData =
     -- if it is not showing.
     local oFrame = ArtifactWatchBar.OverlayFrame.Text;
     if not oFrame then return end;
-    -- Get current artifact (cached)
+    -- Get current artefact (cached)
     local sName = sArtifactName;
     if not sName then return end;
     -- Get other data
     local iXP, iMax, iNX, iAvailable, iTotal = iArtifactXP, iArtifactXPMax,
-      iArtifactXPNext, iArtifactAvailable, iArtifactXPTotal;
+      iArtifactXPNext, iArtifactAvailable, iArtefactXPTotal;
     -- Calculate percentage
     local LPercent = iXP/iMax*100;
     -- Start building bar text
@@ -5526,42 +5586,6 @@ FunctionHookData =
     ProcessTextString(oFrame, LPercent, sText);
   end,
 --]]
-  -- -------------------------------------------------------------------------
-  TextStatusBar_UpdateTextString = function(oFrame)
-    -- Return if frame is invalid
-    if not oFrame then return end;
-    -- If frame has a text string
-    local oSubFrame = oFrame.TextString;
-    if oSubFrame then
-      local _, nMax = oFrame:GetMinMaxValues();
-      if nMax <= 0 then
-        if oSubFrame:IsShown() then oSubFrame:Hide() end
-        return;
-      end
-      local nCur = oFrame:GetValue();
-      ProcessTextString(oSubFrame, nCur/nMax*100, OneOrBoth(nCur,nMax));
-    end
-    -- Return if the unit isn't specified or doesn't exist
-    local sUnit = oFrame.unit;
-    if not sUnit or not UnitExists(sUnit) then return end;
-    -- Get frame health bar and return if invalid or a power bar
-    oSubFrame = oFrame.healthbar or oFrame;
-    if not oSubFrame or oSubFrame.powerType or
-      not oSubFrame.SetStatusBarColor then return end;
-    -- Use the default green colour if the unit frame enhancements setting is
-    -- disabled.
-    if not SettingEnabled("unitnpe") then
-      return oSubFrame:SetStatusBarColor(0, 1, 0) end;
-    -- Get the class of the unit and return if there is no class
-    local _, sClass = UnitClass(sUnit);
-    if not sClass then return end;
-    -- Set the health bar to the colour of the class. For some reason, instead
-    -- of Blizzard using gray textures so devs can set any colour the want,
-    -- they decided to use a yellow texture so that limits the colours, so
-    -- we'll have to try and offset that.
-    local aCol = RAID_CLASS_COLORS[sClass];
-    oSubFrame:SetStatusBarColor(aCol.r-0.37, aCol.g-0.75, aCol.b-0.10);
-  end,
   -- --------------------------------------------------------------------------
 --[[ FIXME
   BagSlotButton_OnDrag = function(Self)
@@ -5570,41 +5594,13 @@ FunctionHookData =
     end
   end,
 --]]
-  -- -------------------------------------------------------------------------
---[[ FIXME
-  ClickAuctionSellItemButton = function()
-    local _, _, _, Quality, _, Price = GetAuctionSellItemInfo();
-    if not SettingEnabled("autofbo") or Quality == nil then
-      return;
-    end
-    if ReadBid then Price = MoneyInputFrame_GetCopper(StartPrice) end;
-    if Quality < 0 then Quality = -Quality end;
-    local Deposit = CalculateAuctionDeposit(AuctionFrameAuctions.duration);
-    local BidMultiplier, BuyoutMultiplier = 1, 2;
-    if Quality >= 4 then
-      BidMultiplier = GetDynSetting("BidEpicMultiplier");
-      BuyoutMultiplier = GetDynSetting("BuyoutEpicMultiplier");
-    elseif Quality >= 3 then
-      BidMultiplier = GetDynSetting("BidRareMultiplier");
-      BuyoutMultiplier = GetDynSetting("BuyoutRareMultiplier");
-    elseif Quality >= 2 then
-      BidMultiplier = GetDynSetting("BidUncommonMultiplier");
-      BuyoutMultiplier = GetDynSetting("BuyoutUncommonMultiplier");
-    elseif Quality >= 1 then
-      BidMultiplier = GetDynSetting("BidCommonMultiplier");
-      BuyoutMultiplier = GetDynSetting("BuyoutCommonMultiplier");
-    end
-    MoneyInputFrame_SetCopper(StartPrice, (Price*BidMultiplier)+Deposit);
-    MoneyInputFrame_SetCopper(BuyoutPrice, (Price*BuyoutMultiplier)+Deposit);
-  end,
---]]
   -- --------------------------------------------------------------------------
   LFGListApplicationDialog_Show = function(Frame)
     -- Ignore if setting not enabled
     if not SettingEnabled("autoall") then return end;
     -- Set the description
     Frame.Description.EditBox:
-      SetText(GetDynSetting("AutoLFGDescription") or sNull);
+      SetText(GetDynSetting("dalfgd") or sNull);
     -- Do not auto-accept if shift held
     if IsShiftKeyDown() then return end;
     -- Click the button
@@ -5626,16 +5622,6 @@ FrameEventHookData = { OnUpdate = {
   -- Automatically update tooltip mana bar ------------------------------------
   GameTooltipStatusBar = function() TriggerTimer("TUT") end,
   -- ==========================================================================
-}, OnShow = {
-  -- Skip cut-scenes ----------------------------------------------------------
-  CinematicFrame = function()
-    -- If setting is enabled and player level is over 1 then skip it. The
-    -- cursor gets bugged when starting another character.
-    if SettingEnabled("skipacs") and UnitLevel("player") > 1 then
---      CinematicFrame_CancelCinematic();
-    end
-  end,
-  -- ==========================================================================
 }, OnMouseUp = {
   -- --------------------------------------------------------------------------
   MiniMapWorldMapButton = function(_, Button)
@@ -5653,17 +5639,17 @@ FrameEventHookData = { OnUpdate = {
 }};                                    -- FrameEventHookData
 -- ============================================================================
 GetVersion = function()
-  return format("%u.%u%s", Version.Major, Version.Minor, Version.Extra);
+  return format("%u%s", Version.Release, Version.Extra);
 end
 -- == 'pairs' like function to return sortedpairs ============================
-SortedPairs = function(aData)
+SortedPairs = function(aData, fcbFunc)
   -- Check table
   assert(type(aData) == "table", "Invalid table");
   -- Output table
   local aOut = { };
   -- Insert all keys and values as indexed and sort them by name
   for sKey, vVal in pairs(aData) do tinsert(aOut, { sKey, vVal }) end;
-  sort(aOut, function(a, b) return a[1] < b[1] end);
+  sort(aOut, fcbFunc or function(a, b) return a[1] < b[1] end);
   -- Output table index
   local iIndex = 0;
   -- Return iterator callback that returns the next item in the list
@@ -5748,7 +5734,7 @@ IsFlooding = function(sUser)
   -- Get current time
   local iTime = time();
   -- Get timeout for existing entries
-  local nTimeout = GetDynSetting("FloodTimeOut");
+  local nTimeout = GetDynSetting("dfto");
   for sUser, aData in pairs(TextFloodData) do
     if iTime - aData.T >= nTimeout then aData[sUser] = nil end;
   end
@@ -5763,7 +5749,7 @@ IsFlooding = function(sUser)
   -- Get maximum lines setting. The maximum number of lines before player is
   -- deemed flooding. Return flooding if the current lines exceeds the maximum
   -- allowed lines.
-  local iLinesCurrent, iLinesMax = aTFData.C, GetDynSetting("FloodLinesMax");
+  local iLinesCurrent, iLinesMax = aTFData.C, GetDynSetting("dflm");
   if iLinesCurrent >= iLinesMax then return true end;
   -- Get maximum time before the maximum lines amount is reset for player and
   local MaxTime = GetDynSetting("FloodLineTime");
@@ -6033,7 +6019,6 @@ UnitIsFriend = function(user)
 end
 -- == Check if specified player is in your guild =============================
 UserIsInGuild = function(sUser)
-  -- Check parameter
   assert(sUser, "sUser not specified");
   if not IsInGuild() then return false end;
   local Count = GetNumGuildMembers();
@@ -6046,14 +6031,12 @@ end
 UserIsOfficer = function(User)
   if not IsInGuild() then return false end;
   if not User then User = sMyName end;
-  local Count, Name, Rank, CanTalk = GetNumGuildMembers();
+  local Count = GetNumGuildMembers();
   for Index = 1, Count do
-    Name, _, Rank = GetGuildRosterInfo(Index);
+    local Name, _, Rank = GetGuildRosterInfo(Index);
     if Name == User then
-      _, _, _, CanTalk =
-        C_GuildInfo.GuildControlGetRankFlags(4);
-      if CanTalk or Rank == 0 then return true end;
-      return false;
+      local _, _, _, CanTalk = C_GuildInfo.GuildControlGetRankFlags(4);
+      return CanTalk or Rank == 0;
     end
   end
   return false;
@@ -6093,7 +6076,7 @@ end
 SetDynSetting = function(Setting, Value)
   assert(Setting, "Setting not specified");
   assert(mhconfig, "No configuration database, please restart!");
-  ConfigDynamicData[Setting] = Value or ConfigData.Dynamic[Setting];
+  ConfigDynamicData[Setting] = Value;
 end
 -- ===========================================================================
 GetDynSetting = function(Setting)
@@ -6105,11 +6088,7 @@ end
 FindPartySlot = function(User, Battleground)
   assert(User, "User not specified");
   local Data;
-  if Battleground then
-    Data = GroupBGData;
-  else
-    Data = GroupData;
-  end
+  if Battleground then Data = GroupBGData else Data = GroupData end;
   Data = Data.D.N[User];
   if not Data then return nil end;
   return Data.I;
@@ -6134,9 +6113,9 @@ StringToColour = function(String)
   local R, G, B, L, C = 0, 0, 0, #String;
   for I = 1, L do
     C = strbyte(String, I);
-    R = (B+C*L+G)%0x100;
-    G = (R+C*L+B)%0x100;
-    B = (G+C*L+R)%0x100;
+    R = (B + C * L + G)%0x100;
+    G = (R + C * L + B)%0x100;
+    B = (G + C * L + R)%0x100;
   end
   return R, G, B;
 end
@@ -6154,19 +6133,10 @@ ShowQuestion = function(Text, Function)
   assert(Function, "Function not specified");
   local WindowName = "MH_QUESTION";
   StaticPopup_Hide(WindowName);
-  StaticPopupDialogs[WindowName] =
-  {
-    text = Text,
-    button1 = "Yes",
-    button2 = "No",
-    OnAccept = function(Self)
-      SlashFunc(Function);
-    end,
-    timeout = 0,
-    exclusive = 1,
-    whileDead = 1,
-    hideOnEscape = 1,
-    showAlert = 1
+  StaticPopupDialogs[WindowName] = {
+    text      = Text, button1   = "Yes", button2      = "No", timeout   = 0,
+    exclusive = 1,    whileDead = 1,     hideOnEscape = 1,    showAlert = 1,
+    OnAccept  = function(Self) SlashFunc(Function) end,
   }
   StaticPopup_Show(WindowName);
 end
@@ -6178,8 +6148,7 @@ ShowMsg = function(Text, Function, Icon, Item)
     if Var then return Text end;
     return nil;
   end
-  StaticPopupDialogs[WindowName] =
-  {
+  StaticPopupDialogs[WindowName] = {
     text = Text,
     button1 = "Ok",
     button2 = Evaluate(Item, "Cancel"),
@@ -6337,20 +6306,12 @@ end
 MakeTime = function(Seconds)
   assert(Seconds, "Seconds not specified");
   local Number, OfWhat;
-  if Seconds >= 604800 then
-    Number, OfWhat = floor(Seconds/604800), "week";
-  elseif Seconds >= 86400 then
-    Number, OfWhat = floor(Seconds/86400), "day";
-  elseif Seconds >= 3600 then
-    Number, OfWhat = floor(Seconds/3600), "hour";
-  elseif Seconds >= 60 then
-    Number, OfWhat = floor(Seconds/60), "min";
-  else
-    Number, OfWhat = floor(Seconds), "sec";
-  end
-  if Number ~= 1 then
-    OfWhat = OfWhat.."s";
-  end
+  if Seconds >= 604800 then Number, OfWhat = floor(Seconds/604800), "week";
+  elseif Seconds >= 86400 then Number, OfWhat = floor(Seconds/86400), "day";
+  elseif Seconds >= 3600 then Number, OfWhat = floor(Seconds/3600), "hour";
+  elseif Seconds >= 60 then Number, OfWhat = floor(Seconds/60), "min";
+  else Number, OfWhat = floor(Seconds), "sec" end;
+  if Number ~= 1 then OfWhat = OfWhat.."s" end;
   return Number.." "..OfWhat;
 end
 -- ===========================================================================
@@ -6396,14 +6357,17 @@ end
 MakeQuestPrettyNameId = function(iId)
   local sTitle = C_QuestLog.GetTitleForQuestID(iId);
   if not sTitle then return sNull end;
-  local iLevel = C_QuestLog.GetQuestDifficultyLevel(iId);
+  local sText = sNull;
+  local sTag = C_QuestLog.GetQuestTagInfo(iId);
+  if sTag then
+    sTag = sTag.tagName;
+    sText = "[|cff"..format("%02x%02x%02x", StringToColour(sTag))..sTag.."|r]";
+  end
+  if iGroup and iGroup > 0 then
+    sText = sText.."[|cffffffffx"..iGroup.."|r]" end;
+  sText = sText..(GetQuestLink(iId) or ("["..sTitle.."]"));
   local iGroup = C_QuestLog.GetSuggestedGroupSize(iId);
-  local iFreq = C_QuestLog.GetQuestType(iId);
-  local sText = (GetQuestLink(iId) or ("["..sTitle.."]")).."(Lv."..iLevel;
-  if iFreq == LE_QUEST_FREQUENCY_DAILY then sText = sText.." Daily";
-  elseif iFreq == LE_QUEST_FREQUENCY_WEEKLY then sText = sText.." Weekly" end;
-  if iGroup and iGroup > 0 then sText = sText.." Group [x"..iGroup.."]" end;
-  return sText..")";
+  return sText;
 end
 -- ===========================================================================
 MakeQuestPrettyName = function(iIndex)
@@ -6489,7 +6453,7 @@ ShowDelayedWhispers = function()
     -- Colour
     local sColour, sExtra;
     if aData.B then sColour, sExtra = "BN_WHISPER", "on B.Net ";
-               else sColour, sExtra = "WHISPER", "" end;
+               else sColour, sExtra = "WHISPER", sNull end;
     -- Print the whisper
     Print(aData.N.." whispered "..sExtra..MakeTime(time()-aData.T)..
       " ago: "..aData.M, ChatTypeInfo[sColour]);
@@ -6625,7 +6589,7 @@ StatsSet = function(iTime, sName, iFlags, sTable, sIndex, iAmount, iSkId, bHe)
   if 0 == BAnd(COMBATLOG_OBJECT_AFFILIATION_MINE, iFlags) or
     not bStatsBests then return end;
   -- Get link for spell so player can click on it. Use skill name if nil.
-  local sLink = GetSpellLink(iSkId);
+  local sLink = C_Spell.GetSpellLink(iSkId);
   if not sLink or #sLink == 0 then sLink = sSkill or iSkId end;
   -- Print the new record to chat
   local sType;
@@ -6727,7 +6691,7 @@ ShowPasteMenu = function(Frame, Function)
           tileSize = 8,
           insets   = { left = 0, right = 0, top = 0, bottom = 0 }
         });
-        Frame:SetFont("fonts\\frizqt__.ttf", 12, "");
+        Frame:SetFont("fonts\\frizqt__.ttf", 12, sNull);
         Frame:SetShadowColor(0, 0, 0);
         Frame:SetShadowOffset(1, -1);
         Frame:SetBackdropColor(0, 0, 0, 1);
@@ -6869,7 +6833,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
   oDialog:SetWidth(iWidth+iBorder*2+22);
   oDialog:RegisterForDrag("RightButton");
   oDialog:SetScript("OnDragStart", function()
-    if GetMouseFocus() == oDialog then oDialog:StartMoving() end;
+    if GetMouseFoci()[1] == oDialog then oDialog:StartMoving() end;
   end);
   oDialog:SetScript("OnDragStop", function()
     oDialog:StopMovingOrSizing();
@@ -6987,7 +6951,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
   oBrowser:SetWidth(oScrollBar:GetWidth());
   -- oDialog editor
   oEditor = CreateFrame("EditBox", nil, oScrollFrame)
-  oEditor:SetFont("fonts\\frizqt__.ttf", 14, "");
+  oEditor:SetFont("fonts\\frizqt__.ttf", 14, sNull);
   oEditor:SetShadowColor(0, 0, 0);
   oEditor:SetShadowOffset(1, -1);
   oEditor:SetJustifyH("LEFT");
@@ -7028,7 +6992,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
   oConfigFrame.MaxCat = 0;
   oConfigFrame.MaxOpt = 0;
   oConfigEditbox = CreateFrame("EditBox");
-  oConfigEditbox:SetFont("fonts\\frizqt__.ttf", 12, "");
+  oConfigEditbox:SetFont("fonts\\frizqt__.ttf", 12, sNull);
   oConfigEditbox:SetShadowColor(0, 0, 0);
   oConfigEditbox:SetShadowOffset(1, -1);
   oConfigEditbox:SetJustifyH("RIGHT");
@@ -7140,7 +7104,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
       CatFrame:ClearAllPoints();
     end
     CatFrame:SetScript("OnMouseUp", function(Self, Button)
-      if GetMouseFocus() ~= Self then return end;
+      if GetMouseFoci()[1] ~= Self then return end;
       if Button == "LeftButton" then
         if Self.Expanded then
           PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
@@ -7230,7 +7194,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
     OptFrame:SetPoint("BOTTOMLEFT", Parent, "BOTTOMLEFT", 0, -19);
     SetTooltip(OptFrame, HoverData);
     OptFrame:SetScript("OnMouseUp", function(Frame, Button)
-      if GetMouseFocus() ~= Frame then return end;
+      if GetMouseFoci()[1] ~= Frame then return end;
       PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
       ClickFunc(Frame, Button);
     end);
@@ -7278,7 +7242,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
               OptFrame.Variable = Option;
               OptFrame.TextLeft:SetText(OptNum+1);
               OptFrame.TextCentre:SetText(OptData.SD);
-              if NewOptionsData[Option] then
+              if ConfigNewData[Option] then
                 OptFrame.TextCentre:SetText(OptFrame.TextCentre:GetText()..
                   " |cff0000ff<NEW!>|r");
               end
@@ -7424,7 +7388,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
   end);
   local function LogDetailUpdate()
     local NumCat, NumOpt, Parent = 0, 0, oAnchor;
-    local SortInterval = GetDynSetting("LogDialogItemIntervals");
+    local SortInterval = GetDynSetting("dldii");
     for CatName, CatData in SortedPairs(mhclog) do
       local CatFrame = GetCategory(LogDetailUpdate, NumCat, Parent, {
         { T=CatName },
@@ -7520,8 +7484,8 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
         local OptNum = 0;
         for iId, Data in pairs(WhoData) do
           iId = iId:sub(1,-2);
-          local sRealName = GetSpellInfo(iId);
-          if sRealName then sRealName = "|Hspell:"..iId.."|h"..sRealName.."|h";
+          local sRealName = C_Spell.GetSpellInfo(iId);
+          if sRealName then sRealName = "|Hspell:"..iId.."|h"..sRealName.name.."|h";
           else sRealName = iId end;
           local sDate = date("%d/%m/%y %H:%M", Data[1]);
           local iValue = Data[2];
@@ -7532,8 +7496,9 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
             if Button ~= "RightButton" then return end;
             ShowPasteMenu(Self, function(Self, Method, Target)
               assert(Method, "No method specified");
-              SendChat(Who.."'s best "..GetSpellLink(iId).." of "..iValue..
-                " on "..sWho.." at "..sDate, Method, Target, nil, true);
+              SendChat(Who.."'s best "..C_Spell.GetSpellLink(iId).." of "..
+                iValue.." on "..sWho.." at "..sDate, Method, Target, nil,
+                true);
             end);
           end, NumOpt, Parent, {
             { T=sRealName },
@@ -7928,7 +7893,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
       insets   = { left = 4, right = 4, top = 4, bottom = 4 }
     });
     -- Set dialog opacity
-    oDialog:SetAlpha(GetDynSetting("DialogOpacity")/100);
+    oDialog:SetAlpha(GetDynSetting("ddo")/100);
     -- Set full intensity backdrop colour
     oDialog:SetBackdropColor(1, 1, 1, 1);
     -- Hide all other dialogs
@@ -8047,35 +8012,12 @@ GetInstanceName = function()
   return Name.."_"..Diff;
 end
 -- ===========================================================================
-ClearQuests = function(iMinLevel, iGreater)
-  local iMax, iCount = C_QuestLog.GetNumQuestLogEntries();
-  if iCount == 0 then return ShowMsg("There are no quests to abandon!") end;
-  local iDumped = 0;
-  for iIndex = 1, iMax do
-    local _, iLevel = C_QuestLog.GetTitleForLogIndex(iIndex);
-    if iLevel > 0 and ((not iGreater and iLevel <= iMinLevel) or
-                           (iGreater and iLevel > iMinLevel)) then
-      C_QuestLog.SelectQuestLogEntry(iIndex);
-      SetAbandonQuest();
-      AbandonQuest();
-      iDumped = iDumped + 1;
-      Print("Abandoned quest "..MakeQuestPrettyName(iIndex).."!");
-    end
-  end
-  if iDumped == 0 then return ShowMsg("None of the |cff7f7f7f"..iCount..
-    "|r quests you have were abandoned") end;
-  if iDumped == iCount then return ShowMsg("All of the |cff7f7f7f"..iCount..
-    "|r quests you have were abandoned") end;
-  ShowMsg("A total of |cff7f7f7f"..iDumped.."|r of |cff7f7f7f"..iCount..
-    "|r quests you have were abandoned");
-end
--- ===========================================================================
 WhisperIsDelayed = function(Msg, User, MsgId, UserId)
   -- Process whisper function
   local function ProcessWhisper(sResponse)
     -- Get prefix if battle.net whisper
     local sPrefix;
-    if UserId then sPrefix = "BN" else sPrefix = "" end;
+    if UserId then sPrefix = "BN" else sPrefix = sNull end;
     -- Get user colour
     local R, G, B = StringToColour(User);
     -- Add to delayed whisper list
@@ -8273,8 +8215,8 @@ GetDurability = function()
   return iTotalCurrent, iTotalMaximum, iTotalCurrent/iTotalMaximum*100
 end
 -- ===========================================================================
-GetActiveArtifactInfo = function()
-  -- Get equipped artifact data and return if none
+GetActiveArtefactInfo = function()
+  -- Get equipped artefact data and return if none
   local aData = C_ArtifactUI.GetEquippedArtifactInfo();
   if not aData then return end;
   -- Get parts
@@ -8286,7 +8228,7 @@ GetActiveArtifactInfo = function()
   local iAvailable = 0;
   -- Function to calculate cost (used twice)
   local function C() return fFunc(iSpent + iAvailable, iTier) or 0 end;
-  -- Maximum artifact power
+  -- Maximum artefact power
   local iMax = C();
   -- Save total xp
   local iTotalXP = iXP;
@@ -8405,16 +8347,17 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       if not VariableExists(sVar) then
         ConfigBooleanData[sVar] = nil;
       elseif type(sVal) ~= "boolean" then
-        if type(sVal) == "number" then ConfigBooleanData[sVar] = sVal == 1;
+        if type(sVal) == "number" then ConfigBooleanData[sVar] = sVal ~= 0;
         else ConfigBooleanData[sVar] = nil end;
       end
     end
     -- Make sure missing booleans are set
+    ConfigNewData = ConfigData.New;
     for _, CategoryData in pairs(ConfigData.Options) do
       for VariableName in pairs(CategoryData) do
         if type(ConfigBooleanData[VariableName]) ~= "boolean" then
-          ConfigBooleanData[VariableName] = nil;
-          NewOptionsData[VariableName] = true;
+          ConfigNewData[VariableName] = true;
+          ConfigBooleanData[VariableName] = false;
         end
       end
     end
@@ -8426,9 +8369,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     end
     -- Make sure dynamic config database entries are valid
     for sVar, sVal in pairs(ConfigDynamicData) do
-      if not ConfigData.Dynamic[sVar] then
-        ConfigDynamicData[sVar] = nil;
-      elseif type(ConfigData.Dynamic[sVar].DF) ~= type(sVal) then
+      if type(ConfigData.Dynamic[sVar].DF) ~= type(sVal) then
         ConfigDynamicData[sVar] = ConfigData.Dynamic[sVar].DF;
       end
     end
@@ -8441,10 +8382,10 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     -- Check and verify whisper log database
     if type(mhwlog) ~= "table" then mhwlog = { } end;
     for sName, aData in pairs(mhwlog) do
-      if not aData or type(aData) ~= "table" or
-         not aData.N or type(aData.N) ~= "string" or
-         not aData.T or type(aData.T) ~= "number" or
-         not aData.M or type(aData.M) ~= "string" then
+      if type(aData) ~= "table" or
+         type(aData.N) ~= "string" or
+         type(aData.T) ~= "number" or
+         type(aData.M) ~= "string" then
         tremove(mhwlog, sName);
       end
     end
@@ -8456,7 +8397,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       end
     end
     -- Check and verify group tracker log database
-    local nTimePrune = time() - GetDynSetting("GroupTrackPruningTime");
+    local nTimePrune = time() - GetDynSetting("dgtpt");
     if type(mhgtrack) ~= "table" then mhgtrack = { } end;
     for sItem, aData in pairs(mhgtrack) do
       if type(aData) ~= "table" or #aData ~= 6 then
@@ -8559,7 +8500,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       BestStatsData = { };
       mhstats.BS = BestStatsData;
     end
-    local nTimePrune = time() - GetDynSetting("StatPruningTime");
+    local nTimePrune = time() - GetDynSetting("dspt");
     for sName, aSkillData in pairs(BestStatsData) do
       if type(aSkillData) ~= "table" or #aSkillData ~= 3 then
         BestStatsData[sName] = nil;
@@ -8590,7 +8531,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   -- Initialise chat hacks ------------------------------------------------- --
   function()
     -- Get maximum chat history setting
-    local iMaxChatHistory = GetDynSetting("MaxChatHistory")
+    local iMaxChatHistory = GetDynSetting("dmch")
     -- For each chat window
     for Index = 1, NUM_CHAT_WINDOWS do
       local Frame = _G["ChatFrame"..Index];
@@ -8605,10 +8546,11 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   end,
   -- Blizzard UI hooks ----------------------------------------------------- --
   function()
+    -- Hook chat events
     foreach(ChatEventsData, ChatFrame_AddMessageEventFilter);
-    CreateTimer(1, function()
-      foreach(FunctionHookData, hooksecurefunc);
-    end, 1, "HookSecureFunctions");
+    -- Hook Blizzard secure functions
+    foreach(FunctionHookData, hooksecurefunc);
+    -- Hook Blizzard secure script events
     for Type, TypeData in pairs(FrameEventHookData) do
       for Name, Function in pairs(TypeData) do
         local Frame = _G[Name];
@@ -8618,12 +8560,56 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         end
       end
     end
+    -- Status bar updater function
+    local function StatusBarUpdate(oFrame)
+      -- Return if frame is invalid
+      if not oFrame then return end;
+      -- If frame has a text string
+      local oSubFrame = oFrame.TextString;
+      if oSubFrame then
+        local _, nMax = oFrame:GetMinMaxValues();
+        if nMax <= 0 then
+          if oSubFrame:IsShown() then oSubFrame:Hide() end
+          return;
+        end
+        local nCur = oFrame:GetValue();
+        ProcessTextString(oSubFrame, nCur/nMax*100, OneOrBoth(nCur,nMax));
+      end
+      -- Return if the unit isn't specified or doesn't exist
+      local sUnit = oFrame.unit;
+      if not sUnit or not UnitExists(sUnit) then return end;
+      -- Get frame health bar and return if invalid or a power bar
+      oSubFrame = oFrame.healthbar or oFrame;
+      if not oSubFrame or oSubFrame.powerType or
+        not oSubFrame.SetStatusBarColor then return end;
+      -- Use the default green colour if the unit frame enhancements setting is
+      -- disabled.
+      if not SettingEnabled("unitnpe") then
+        return oSubFrame:SetStatusBarColor(0, 1, 0) end;
+      -- Get the class of the unit and return if there is no class
+      local _, sClass = UnitClass(sUnit);
+      if not sClass then return end;
+      -- Set the health bar to the colour of the class. For some reason, instead
+      -- of Blizzard using gray textures so devs can set any colour the want,
+      -- they decided to use a yellow texture so that limits the colours, so
+      -- we'll have to try and offset that.
+      local aCol = RAID_CLASS_COLORS[sClass];
+      oSubFrame:SetStatusBarColor(aCol.r-0.37, aCol.g-0.75, aCol.b-0.10);
+    end
+    for iIndex, aSBFrame in ipairs({
+      PlayerFrame_GetHealthBar(), PlayerFrame_GetManaBar(),
+      TargetFrame.healthbar,      TargetFrame.manabar,
+      TargetFrameToT.healthbar,   TargetFrameToT.manabar,
+      FocusFrame.healthbar,       FocusFrame.manabar,
+      PetFrame.healthbar,         PetFrame.manabar
+    }) do
+      hooksecurefunc(aSBFrame, "UpdateTextString", StatusBarUpdate);
+    end
   end,
   -- Other hacks ----------------------------------------------------------- --
   function()
     RaidWarningFrame:UnregisterEvent("CHAT_MSG_RAID_WARNING");
     RuneFrame:SetParent(PlayerFrame);
-    LoadAddOn("Blizzard_TalkingHeadUI");
   end,
   -- Bag button enhancements ----------------------------------------------- --
   function()
@@ -8669,7 +8655,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     Text:SetShadowColor(0, 0, 0);
     Text:SetShadowOffset(1, -1);
     Text:SetPoint("RIGHT", oFrame, "RIGHT", 0, 0);
-    Text:SetFont("fonts\\frizqt__.ttf", 10, "");
+    Text:SetFont("fonts\\frizqt__.ttf", 10, sNull);
     Text:SetJustifyH("RIGHT");
     local Dps = true;
     -- Update position function
@@ -8753,15 +8739,14 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       -- Update dps value
       Update();
     end);
+    -- Update value and position
+    UpdatePosition();
     -- Wait for events
     oFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
     oFrame:RegisterEvent("PLAYER_REGEN_ENABLED");
     oFrame:RegisterEvent("PLAYER_REGEN_DISABLED");
     oFrame:RegisterUnitEvent("UNIT_ENTERED_VEHICLE", "player");
     oFrame:RegisterUnitEvent("UNIT_EXITED_VEHICLE", "player");
-    -- Update value and position
-    UpdatePosition();
-    Update();
   end,
   -- Tooltip frame enhancements -------------------------------------------- --
   function()
@@ -8778,7 +8763,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     -- Add power bar text for the power bar
     local TooltipManaBarText =
       TooltipManaBar:CreateFontString(nil, nil, "NumberFontNormal");
-    TooltipManaBarText:SetFont("fonts\\frizqt__.ttf", 10, "");
+    TooltipManaBarText:SetFont("fonts\\frizqt__.ttf", 10, sNull);
     TooltipManaBarText:SetShadowColor(0, 0, 0);
     TooltipManaBarText:SetShadowOffset(1, -1);
     TooltipManaBarText:SetPoint("CENTER", TooltipManaBar, "CENTER", 0, 0);
@@ -8786,7 +8771,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     -- Add text to the default gametooltip  health bar
     local TooltipHealthBarText =
       GameTooltipStatusBar:CreateFontString(nil, nil, "NumberFontNormal")
-    TooltipHealthBarText:SetFont("fonts\\frizqt__.ttf", 10, "");
+    TooltipHealthBarText:SetFont("fonts\\frizqt__.ttf", 10, sNull);
     TooltipHealthBarText:SetShadowColor(0, 0, 0);
     TooltipHealthBarText:SetShadowOffset(1, -1);
     TooltipHealthBarText:SetPoint("CENTER", GameTooltipStatusBar,
@@ -8823,8 +8808,8 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
 
       local UD = UnitIsDead(sUnit);
       local TypeData = UnitClassificationTypesData
-        [UnitClassification(sUnit) or "unknown"] or
-          UnitClassificationTypesData.unknown;
+        [UnitClassification(sUnit) or "normal"] or
+          UnitClassificationTypesData.normal;
       local EC = TypeData.C;
       local FlagsModded = TypeData.F;
       if UL > 0 then UL = UL.." " else UL = "?? " end;
@@ -8912,21 +8897,21 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       _G[TooltipName.."TextLeft1"]:SetText(format("|c%08x%s|r", NC, UN));
       local TooltipLeft2 = _G[TooltipName.."TextLeft2"];
       if TooltipLeft2:GetText() then
+        local Guild, GuildOn = TooltipLeft2:GetText():match("^(.+)-(.+)$");
+        if GuildOn and #GuildOn > 0 then
+          local TooltipRight2 = _G[TooltipName.."TextRight2"];
+          TooltipLeft2:SetText(Guild);
+          TooltipRight2:SetText(format("|cff7f7f7f%s|r", GuildOn));
+          TooltipRight2:Show();
+        end
         local _, LL = TooltipLeft2:GetText():gsub("Level.*", sNull);
-        if LL == 1 then
-          LL = 2;
+        if LL == 1 then LL = 2;
         else
           LL = _G[TooltipName.."TextLeft3"];
           if LL and LL:GetText() then
             _, LL = LL:GetText():gsub("Level.*", sNull);
-            if LL == 1 then
-              LL = 3;
-            else
-              LL = nil;
-            end
-          else
-            LL = nil;
-          end
+            if LL == 1 then LL = 3 else LL = nil end;
+          else LL = nil end;
         end
         if LL and UCC then
           _G[TooltipName.."TextLeft"..LL]:
@@ -8983,9 +8968,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
           if Health > 1 then
             ProcessTextString(TooltipHealthBarText, HealthPerc,
               OneOrBoth(Health,HealthMax)..Extra);
-          else
-            TooltipHealthBarText:Hide();
-          end
+          else TooltipHealthBarText:Hide() end;
           local _, Class = UnitClass(sUnit);
           local ClassColour = RAID_CLASS_COLORS[Class];
           if not ClassColour then ClassColour = { r=0,g=0,b=0 } end;
@@ -9046,7 +9029,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       if not SettingEnabled("enhtool") then return end;
       sUnit = Unit;
       oTargetLine = nil;
-      CreateTimer(GetDynSetting("TooltipRefreshInterval"), function()
+      CreateTimer(GetDynSetting("dtri"), function()
         if GameTooltip:GetUnit() then RefreshTooltip() return end;
         sUnit = nil;
         GameTooltip:Hide();
@@ -9064,8 +9047,8 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     oButton:SetToplevel(true);
     oButton:SetHighlightTexture("Interface\\Minimap\\"..
       "UI-Minimap-ZoomButton-Highlight");
-    oButton:SetPoint("CENTER", GetDynSetting("MinimapButtonX"),
-      GetDynSetting("MinimapButtonY"));
+    oButton:SetPoint("CENTER", GetDynSetting("dmbx"),
+      GetDynSetting("dmby"));
     -- Setup button frame
     local oIcon = oButton:CreateTexture(nil, "BACKGROUND");
     oIcon:SetTexture("Interface\\ICONS\\Temp");
@@ -9105,23 +9088,177 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       oIcon:SetTexCoord(.1, .9, .1, .9);
       oIcon:SetVertexColor(1.0, 1.0, 1.0);
       Self:SetScript("OnUpdate", nil);
-      SetDynSetting("MinimapButtonX", Self.XPos);
-      SetDynSetting("MinimapButtonY", Self.YPos);
+      SetDynSetting("dmbx", Self.XPos);
+      SetDynSetting("dmby", Self.YPos);
     end);
     oButton:SetScript("OnMouseDown", function(Self)
       oIcon:SetTexCoord(0, 1, 0, 1)
       oIcon:SetVertexColor(0.5, 0.5, 0.5);
     end);
+    local function CreateLabel(iLevel, sName)
+      CreateMenuItem({
+        text = sName, isTitle = true, notCheckable = true
+      }, iLevel);
+    end
+    local function CreateSubMenu(iLevel, sName, fcbCallback)
+      CreateMenuItem({
+        text = sName, func = ToggleDropDownMenuCallback,
+        notCheckable = true, hasArrow     = true, value = fcbCallback
+      }, iLevel);
+    end
+    local function SortFunc(aA, aB) return aA[2].SD < aB[2].SD end;
+    local function CreateSubItem(iLevel, bNoCheck, bChecked, sText, fcbFunc)
+      CreateMenuItem({
+        notCheckable = bNoCheck, keepShownOnClick = not bNoCheck,
+        checked = bChecked, text = sText, func = fcbFunc
+      }, iLevel);
+    end
+    local function DropDownMenuCallback()
+      local fcbCallback = UIDROPDOWNMENU_MENU_VALUE;
+      if fcbCallback then return fcbCallback() end;
+      CreateLabel(1, Version.Name.." v"..GetVersion());
+      CreateSubMenu(1, "Commands", function()
+        CreateLabel(2, "Commands...");
+        for Category, Data in SortedPairs(ConfigData.Commands) do
+          CreateSubMenu(2, Category.." commands", function()
+            CreateLabel(3, Category.." commands...");
+            local iIndex = 0;
+            for sCmdName, aCmdData in SortedPairs(Data, SortFunc) do
+              CreateSubItem(3, true, nil,
+                "|cff00ff00("..strchar(0x41+iIndex)..")|r "..aCmdData.SD,
+                function()
+                  if IsShiftKeyDown() or IsControlKeyDown() then
+                    SlashFunc("help "..sCmdName);
+                  else
+                    SlashFunc(sCmdName);
+                  end
+                  HideDropDownMenu(1);
+                end);
+              iIndex = iIndex + 1;
+            end
+            CreateMenuItem({
+              text = "Shift+Click for help";
+              notCheckable = true;
+              isTitle = true;
+            }, 3);
+          end);
+        end
+      end);
+      CreateSubMenu(1, "Settings", function()
+        CreateLabel(2, "Settings...");
+        for Category, Data in SortedPairs(ConfigData.Options) do
+          CreateSubMenu(2, Category.." settings", function()
+            CreateLabel(3, Category.." settings...");
+            local iIndex = 0;
+            for sVarName, aVarData in SortedPairs(Data, SortFunc) do
+              local sText =
+                "|cff00ff00("..strchar(0x41+iIndex)..")|r "..aVarData.SD
+              if ConfigNewData[sVarName] then
+                sText = sText.." |cff0000ff<NEW!>|r" end;
+              CreateSubItem(3, false, SettingEnabled(sVarName), sText,
+                function()
+                  if IsShiftKeyDown() or IsControlKeyDown() then
+                    SlashFunc("help "..sVarName);
+                    HideDropDownMenu(1);
+                  else
+                    SlashFunc(sVarName);
+                  end
+                end);
+              iIndex = iIndex + 1;
+            end
+            CreateMenuItem({
+              text = "Shift+Click for help";
+              notCheckable = true;
+              isTitle = true;
+            }, 3);
+          end);
+        end
+        CreateSubMenu(2, "Advanced settings", function()
+          CreateLabel(3, "Advanced settings...");
+          local iIndex = 0;
+          for sVarName, aVarData in SortedPairs(ConfigData.Dynamic, SortFunc) do
+            CreateSubItem(3, false, GetDynSetting(sVarName) ~= aVarData.DF,
+              "|cff00ff00("..strchar(0x41+iIndex)..")|r "..aVarData.SD,
+              function()
+                if IsShiftKeyDown() or IsControlKeyDown() then
+                  SlashFunc("help "..sVarName);
+                else
+                  SlashFunc(sVarName);
+                end
+                HideDropDownMenu(1);
+              end);
+            iIndex = iIndex + 1;
+          end
+          CreateMenuItem({
+            text = "Shift+Click for help";
+            notCheckable = true;
+            isTitle = true;
+          }, 3);
+        end);
+
+      end);
+      CreateSubMenu(1, "Addons", function()
+        CreateLabel(2, "Addons...");
+        local AddonCount = C_AddOns.GetNumAddOns();
+        local AddonEnabled, MemoryUsageTotal, MemoryUsage = 0, 0;
+        local Name, Title, Checked, Reason;
+        UpdateAddOnMemoryUsage();
+        local AddonHidden = 0;
+        local Deps = { };
+        for Index = 1, AddonCount do
+          for _, Dep in pairs({C_AddOns.GetAddOnDependencies(Index)}) do
+            Deps[C_AddOns.GetAddOnInfo(Index)] = Index;
+          end
+        end
+        for Index = 1, AddonCount do
+          Name, Title, _, Checked, _, Reason =
+            C_AddOns.GetAddOnInfo(Index);
+          MemoryUsage = GetAddOnMemoryUsage(Name);
+          MemoryUsageTotal = MemoryUsageTotal + MemoryUsage;
+          if IsShiftKeyDown() or Enabled or not Deps[Name] then
+            local sText = "|cff00ff00("..strchar(0x40+Index)..")|r ";
+            if Checked then
+              sText = sText..StripColour(Title).." |cff0000ff["..
+                BreakUpLargeNumbers(MemoryUsage).."KB]|r";
+            else sText = sText.."|cff7f7f7f"..
+              StripColour(Title).."|r" end;
+            CreateMenuItem({
+              arg1             = Name,
+              text             = sText,
+              notCheckable     = nil,
+              checked          = Checked,
+              keepShownOnClick = false,
+              func             = function() SlashFunc("tgaddon "..Name) end;
+            }, 2);
+            AddonEnabled = AddonEnabled + 1;
+          else AddonHidden = AddonHidden + 1 end;
+        end
+        Deps = { };
+        CreateMenuItem({
+          notCheckable = true;
+          text = AddonEnabled.." of "..AddonCount-AddonHidden..
+            " loaded ("..AddonHidden.." hidden)";
+          isTitle = true;
+        }, 2);
+        CreateMenuItem({
+          notCheckable = true;
+          text = BreakUpLargeNumbers(MemoryUsageTotal)..
+            "KB of memory in-use";
+          isTitle = true;
+        }, 2);
+        return;
+      end);
+    end
     oButton:SetScript("OnMouseUp", function(Self, Button)
       local function ToggleDropDownCallback()
-        ToggleDropDownMenu(1, nil, MhMod, oButton, 0, 0);
+        ToggleDropDownMenu(1, nil, MhMod, oButton, -128, 128);
       end
       oIcon:SetTexCoord(.1, .9, .1, .9);
       oIcon:SetVertexColor(1.0, 1.0, 1.0);
       GameTooltip:Hide();
-      if GetMouseFocus() ~= Self then return end;
+      if GetMouseFoci()[1] ~= Self then return end;
       if Button == "LeftButton" then
-        if IsAltKeyDown() then --[[ FREE FUNCTION --]]
+        if IsAltKeyDown() then -- Nullop
         elseif IsControlKeyDown() then LocalCommandsData.stsshowp();
         elseif IsShiftKeyDown() then LocalCommandsData.stats();
         else LocalCommandsData.config() end;
@@ -9130,140 +9267,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         elseif IsControlKeyDown() then LocalCommandsData.logdata(sNull, { }, 0);
         elseif IsShiftKeyDown() then LocalCommandsData.money(sNull, { }, 0);
         else
-          UIDropDownMenu_Initialize(MhMod, function(Frame, Level)
-            if Level == 1 then
-              CreateMenuItem({
-                text         = "MhMod/"..GetVersion(),
-                isTitle      = true,
-                notCheckable = true
-              });
-              CreateMenuItem({
-                text         = "|cffafaf00Commands|r";
-                notCheckable = true;
-                isTitle      = true;
-              });
-              for Category, Data in pairs(ConfigData.Commands) do
-                local sName = Category.." Commands";
-                CreateMenuItem({
-                  text         = sName,
-                  func         = ToggleDropDownMenuCallback,
-                  notCheckable = true,
-                  hasArrow     = true,
-                  value        = { NA=sName, VA=Data },
-                }, 1);
-              end
-              CreateMenuItem({
-                text         = "|cffafaf00Addons|r",
-                isTitle      = true,
-                notCheckable = true
-              });
-              sName = "Addon Control"
-              CreateMenuItem({
-                text         = sName,
-                func         = ToggleDropDownCallback,
-                notCheckable = true,
-                hasArrow     = true,
-                value        = { NA=sName, VA=-1 };
-              });
-              CreateMenuItem({
-                text         = Website;
-                isTitle      = true;
-                notCheckable = true;
-              });
-              return;
-            end
-            if not UIDROPDOWNMENU_MENU_VALUE.VA then return end;
-            CreateMenuItem({
-              text         = UIDROPDOWNMENU_MENU_VALUE.NA;
-              isTitle      = true;
-              notCheckable = true;
-            }, 2);
-            if UIDROPDOWNMENU_MENU_VALUE.VA == -1 then
-              local AddonCount = GetNumAddOns();
-              local AddonEnabled, MemoryUsageTotal, MemoryUsage = 0, 0;
-              local Name, Title, Checked, Reason;
-              UpdateAddOnMemoryUsage();
-              local AddonHidden = 0;
-              local Deps = { };
-              for Index = 1, AddonCount do
-                for _, Dep in pairs({GetAddOnDependencies(Index)}) do
-                  Deps[GetAddOnInfo(Index)] = Index;
-                end
-              end
-              for Index = 1, AddonCount do
-                Name, Title, _, Checked, _, Reason = GetAddOnInfo(Index);
-                MemoryUsage = GetAddOnMemoryUsage(Name);
-                MemoryUsageTotal = MemoryUsageTotal + MemoryUsage;
-                if IsShiftKeyDown() or Enabled or not Deps[Name] then
-                  local sText = "|cff00ff00("..strchar(0x40+Index)..")|r ";
-                  if Checked then
-                    sText = sText..StripColour(Title).." |cff0000ff["..
-                      BreakUpLargeNumbers(MemoryUsage).."KB]|r";
-                  else sText = sText.."|cff7f7f7f"..
-                    StripColour(Title).."|r" end;
-                  CreateMenuItem({
-                    arg1             = Name,
-                    text             = sText,
-                    notCheckable     = nil,
-                    checked          = Checked,
-                    keepShownOnClick = false,
-                    func             = function(_, Addon)
-                      SlashFunc("tgaddon "..Addon);
-                    end
-                  }, 2);
-                  AddonEnabled = AddonEnabled + 1;
-                else AddonHidden = AddonHidden + 1 end;
-              end
-              Deps = { };
-              CreateMenuItem({
-                text = AddonEnabled.." of "..AddonCount-AddonHidden..
-                  " loaded ("..AddonHidden.." hidden)";
-                isTitle = true;
-                notCheckable = true;
-              }, 2);
-              CreateMenuItem({
-                notCheckable = true;
-                text = BreakUpLargeNumbers(MemoryUsageTotal)..
-                  "KB of memory in-use";
-                isTitle = true;
-              }, 2);
-              return;
-            end
-            local Sorted = { };
-            for _, V in pairs(UIDROPDOWNMENU_MENU_VALUE.VA) do
-              tinsert(Sorted, V.SD);
-            end
-            sort(Sorted);
-            local Index = 0;
-            for K1, V1 in pairs(Sorted) do
-              for K2, V2 in pairs(UIDROPDOWNMENU_MENU_VALUE.VA) do
-                if V2.SD == V1 then
-                  CreateMenuItem({
-                    arg1 = tostring(K2);
-                    notCheckable = true;
-                    keepShownOnClick = nil;
-                    checked = nil;
-                    text = "|cff00ff00("..strchar(0x41+Index)..")|r "..V2.SD;
-                    func = function(_, Variable)
-                      if IsShiftKeyDown() or IsControlKeyDown() then
-                        SlashFunc("help "..Variable);
-                      else
-                        SlashFunc(Variable);
-                      end
-                      HideDropDownMenu(1);
-                    end;
-                  }, 2);
-                  Index = Index + 1;
-                  break;
-                end
-              end
-            end
-            CreateMenuItem({
-              text = "Shift+Click for help";
-              notCheckable = true;
-              isTitle = true;
-            }, 2);
-          end, "MENU", 1);
+          UIDropDownMenu_Initialize(MhMod, DropDownMenuCallback, "MENU", 1);
           ToggleDropDownCallback();
         end
       end
@@ -9287,102 +9291,101 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   end,
   -- Experience bars enhancemnts ------------------------------------------- --
   function()
-    -- Init experience, reputation and honour bar enhancements
-    for _, aData in ipairs({
-      -- Init experience bar
-      { 1, 4, function(oText)
-        -- Build new text string
-        local sText = "XP="..BreakUpLargeNumbers(iCurrentXP).."/"..
-          FormatNumber(iXPMax)..
-          " ("..RoundNumber(iCurrentXP/iXPMax*100, 2).."%); NX="..
-          FormatNumber(iXPMax-iCurrentXP);
-        -- Add gains remaining
-        if iXPGainsLeft >= 1 and iXPGainsLeft < 1000 then
-          sText = sText.." (x"..ceil(iXPGainsLeft)..")";
-        end
-        -- Add exhaustion
-        if GetXPExhaustion() then
-          sText = sText.."; RX="..BreakUpLargeNumbers(GetXPExhaustion())..
-            " ("..RoundNumber(GetXPExhaustion()/iXPMax*100, 2).."%)";
-        end
-        -- Updte the text string
-        ProcessTextString(oText, iCurrentXP/iXPMax*100, sText);
-      end },
-      -- Init reputation bar
-      { 1, 1, function(oText)
-        local Name, _, _, _, Cur = GetWatchedFactionInfo();
-        if not Name then return end;
-        local Data = FactionData[Name];
-        if not Data then return end;
-        Cur = Cur + 43000;
-        local Percent = Cur/85000*100;
-        local Min, Max = Data.T-Data.B, Data.H-Data.B;
-        local LPercent = Min/Max*100;
-        local sCat = Data.C;
-        if sCat and sCat ~= Name then Name = Name.." of "..sCat end;
-        local Text = Name..": "..OneOrBoth(Cur,85000).." ("..
-          RoundNumber(Percent,2).."%)";
-        if Data.R then Text = Text.."; "..Data.R end;
-        if Percent < 100 then
-          Text = Text..": "..OneOrBoth(Min,Max)..
-            " ("..RoundNumber(LPercent,2).."%)";
-        end
-        if Data.PT then
-          Cur = Data.PT % Data.PH;
-          LPercent = Cur/Data.PH*100
-          Text = Text.."; B="..OneOrBoth(Cur, Data.PH)..
-            " ("..RoundNumber(LPercent,2).."%)";
-        end
-        ProcessTextString(oText, LPercent, Text);
-      end },
-      -- Init Honour bar
-      { 1, 2, function(oText)
-        if not SettingEnabled("advtrak") then return end;
-        local Text = "HXP="..BreakUpLargeNumbers(iHonour).."/"..
-          FormatNumber(iHonourMax)..
-          " ("..RoundNumber(iHonour/iHonourMax*100, 2).."%); LV="..iHonourLevel..
-          "; NX="..FormatNumber(iHonourMax-iHonour);
-        if iHonourGainsLeft >= 1 and iHonourGainsLeft < 1000 then
-          Text = Text.." (x"..ceil(iHonourGainsLeft)..")";
-        end
-        return ProcessTextString(oText, iHonour/iHonourMax*100, Text);
-      end },
-      -- Init Artifact bar
-      { 1, 5, function(oText)
-        -- Get new artifact data
-        local sName, iXP, iMax, iNX, iAvail, iTotal = GetActiveArtifactInfo();
-        if not sName then return end;
-        -- Calculate percent
-        local nPercent = iXP / iMax * 100;
-        -- Set the new text string
-        return ProcessTextString(oText, nPercent, sName.."; ".."AXP="..
-          FormatNumber(iXP).."/"..FormatNumber(iXPMax).."("..
-          RoundNumber(nPercent, 2).."%); NX="..FormatNumber(iXPNext));
-      end }
-    }) do
-      -- Get container frame
-      local oContainer = StatusTrackingBarManager.barContainers[aData[1]];
-      assert(type(oContainer)=="table", "Invalid container id!");
-      -- Get container bar frame
-      local oBar = oContainer.bars[aData[2]];
-      assert(type(oBar)=="table", "Invalid container bar id!");
-      -- Get bar frame
-      local oStatusBar = oBar.StatusBar;
-      assert(type(oStatusBar)=="table", "Invalid status bar!");
-      -- The bar's status bar text class
-      local oStatusText = oBar.OverlayFrame.Text;
-      assert(type(oStatusText)=="table", "Invalid fontstring!");
-      -- Callback
-      local fCallback = aData[3];
-      -- Update function
-      local function OnUpdate()
-        -- Send to callback if setting is enabled
-        if SettingEnabled("advtrak") then fCallback(oStatusText) end;
+    -- Reputation bar text was modified
+    local function ReputationBarModified(oText)
+      if not FactionData then return end;
+      local aData = C_Reputation.GetWatchedFactionData();
+      if not aData then return end;
+      local sName = aData.name;
+      aData = FactionData[sName];
+      if not aData then return end;
+      local sCat = aData.C;
+      if sCat and sCat ~= sName then sName = sName.." of "..sCat end;
+      local sText = sName..": "..OneOrBoth(aData.CV, aData.CH).." ("..
+        RoundNumber(aData.CP, 2).."%)";
+      local sResult = aData.R;
+      if sResult then sText = sText.."; "..sResult end;
+      if not aData.M and aData.TP < 100 then
+        sText = sText..": "..OneOrBoth(aData.TV, aData.TH)..
+          " ("..RoundNumber(aData.TP, 2).."%)";
       end
-      -- Register overrides
-      oStatusBar:HookScript("OnValueChanged", OnUpdate);
-      oStatusBar:HookScript("OnShow", OnUpdate);
-      oStatusBar:HookScript("OnEnter", OnUpdate);
+      if aData.PT then
+        sText = sText.."; B="..OneOrBoth(aData.PV, Data.PH)..
+          " ("..RoundNumber(aData.PP, 2).."%)";
+      end
+      ProcessTextString(oText, aData.CP, sText);
+    end
+    -- Honour bar text was modified
+    local function HonourBarModified(oText)
+      local Text = "HXP="..BreakUpLargeNumbers(iHonour).."/"..
+        FormatNumber(iHonourMax)..
+        " ("..RoundNumber(iHonour/iHonourMax*100, 2).."%); LV="..iHonourLevel..
+        "; NX="..FormatNumber(iHonourMax-iHonour);
+      if iHonourGainsLeft >= 1 and iHonourGainsLeft < 1000 then
+        Text = Text.." (x"..ceil(iHonourGainsLeft)..")";
+      end
+      return ProcessTextString(oText, iHonour/iHonourMax*100, Text);
+    end
+    -- Experience bar text was modified
+    local function XPBarModified(oText)
+      -- Build new text string
+      local sText = "XP="..BreakUpLargeNumbers(iCurrentXP).."/"..
+        FormatNumber(iXPMax)..
+        " ("..RoundNumber(iCurrentXP/iXPMax*100, 2).."%); NX="..
+        FormatNumber(iXPMax-iCurrentXP);
+      -- Add gains remaining
+      if iXPGainsLeft >= 1 and iXPGainsLeft < 1000 then
+        sText = sText.." (x"..ceil(iXPGainsLeft)..")";
+      end
+      -- Add exhaustion
+      if GetXPExhaustion() then
+        sText = sText.."; RX="..BreakUpLargeNumbers(GetXPExhaustion())..
+          " ("..RoundNumber(GetXPExhaustion()/iXPMax*100, 2).."%)";
+      end
+      -- Updte the text string
+      ProcessTextString(oText, iCurrentXP/iXPMax*100, sText);
+    end
+    -- Artefact bar text was modified
+    local function ArtefactBarModified(oText)
+      -- Get new artefact data
+      local sName, iXP, iMax, iNX, iAvail, iTotal = GetActiveArtefactInfo();
+      if not sName then return end;
+      -- Calculate percent
+      local nPercent = iXP / iMax * 100;
+      -- Set the new text string
+      ProcessTextString(oText, nPercent, sName.."; ".."AXP="..
+        FormatNumber(iXP).."/"..FormatNumber(iXPMax).."("..
+        RoundNumber(nPercent, 2).."%); NX="..FormatNumber(iXPNext));
+    end
+    -- For each container (e.g. 1,4+2,1 = XP+Rep Bar)
+    local aContainers = StatusTrackingBarManager.barContainers;
+    for iIndex = 1, #aContainers do
+      -- Get next container
+      local aContainer = aContainers[iIndex];
+      -- Get reputation bar and hook the event function
+      local ReputationBar = aContainer.bars[1];
+      local ReputationBarText = ReputationBar.OverlayFrame.Text;
+      hooksecurefunc(ReputationBar, "SetBarText", function()
+        if not SettingEnabled("advtrak") then return end;
+        ReputationBarModified(ReputationBarText) end);
+      -- Get honour bar and hook the event function
+      local HonourBar = aContainer.bars[2];
+      local HonourBarText = HonourBar.OverlayFrame.Text;
+      hooksecurefunc(HonourBar, "SetBarText", function()
+        if not SettingEnabled("advtrak") then return end;
+        HonourBarModified(HonourBarText) end);
+      -- Get experience bar and hook the event function
+      local XPBar = aContainer.bars[4];
+      local XPBarText = XPBar.OverlayFrame.Text;
+      hooksecurefunc(XPBar, "SetBarText", function()
+        if not SettingEnabled("advtrak") then return end;
+        XPBarModified(XPBarText) end);
+      -- Get artefact bar and hook the event function
+      local ArtefactBar = aContainer.bars[5];
+      local ArtefactBarText = ArtefactBar.OverlayFrame.Text;
+      hooksecurefunc(ArtefactBar, "SetBarText", function()
+        if not SettingEnabled("advtrak") then return end;
+        XPBarModified(ArtefactBarText) end);
     end
   end,
   -- Action bars ----------------------------------------------------------- --
@@ -9390,9 +9393,9 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     -- Text count update function
     local function UpdateCount(iSpellId)
       -- Done if no spell id (i.e. no spell/macro assigned to button)
-      if not iSpellId then return end;
+      if type(iSpellId) ~= "number" then return end;
       -- Get spell power cost data, return if no data
-      local aData = GetSpellPowerCost(iSpellId);
+      local aData = C_Spell.GetSpellPowerCost(iSpellId);
       if not aData or #aData == 0 then return end;
       -- This data is formatted in an array so we need to enumerate through it
       -- to try and find a cost and not a return.
@@ -9440,7 +9443,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         if sName then return UpdateCount(sName) end;
       end,
       PetActionButton = function(iIndex)
-        local sName = GetSpellInfo(GetPetActionInfo(iIndex) or sNull);
+        local sName = C_Spell.GetSpellInfo(GetPetActionInfo(iIndex) or sNull);
         if sName then return UpdateCount(sName) end;
       end
     }) do for iIndex = 1, 12 do
@@ -9526,33 +9529,57 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   end,
   -- Chat slash command ---------------------------------------------------- --
   function()
-    local sCmdLower = "mh";              -- Command as lower case and upcase
-    local sCmdUpper = sCmdLower:upper();
     -- Command callback function
     local function OnCommand(sCmdLine)
       -- Check parameter
       assert(type(sCmdLine)=="string", "Invalid or no string specified");
       -- Get function name and arguments and return if no function
-      local sFunc, sArgs = sCmdLine:trim():match("^(%w+)%s*(.*)");
+      local sFunc, sArgs = sCmdLine:trim():match("^(%w+)%s*(.-)$");
       if not sFunc then return end;
       -- Lower case the function as all the functions are in lowercase
       sFunc = sFunc:lower();
+      -- Have arguments?
+      if sArgs then
+        -- Strip extra and double spaces
+        sArgs = sArgs:trim();
+        while sArgs:find("  ") do sArgs = sArgs:gsub("  ", " ") end;
+        -- Nullify if nothing there now
+        if #sArgs == 0 then sArgs = nil end;
+      end
       -- Get function for command and if function is found
       local fCb = LocalCommandsData[sFunc];
       if fCb then
-        -- Remove leading and trailing spaces and all double spaces
-        sArgs = sArgs:trim();
-        while sArgs:find("  ") do sArgs = sArgs:gsub("  ", " ") end;
         -- Split string into individually accessable arguments
-        local aArgV = { };
-        if #sArgs > 0 then aArgV = { strsplit(" ", sArgs) } end;
+        local aArgV;
+        if sArgs and #sArgs > 0 then aArgV = { strsplit(" ", sArgs) };
+                                else aArgV = { } end;
         -- Execute the function and return
         return LocalCommandsData[sFunc](sArgs, aArgV, #aArgV);
       end
-      -- Check if variable exists of this function. Return with message if none
+      -- Check if variable exists of this function and if not?
       aVData = VariableExists(sFunc);
       if not aVData then
-        return Print("The variable or command '"..sFunc.."' is invalid") end;
+        -- Check if dynamic variable exists. Return with message if none
+        aVData = ConfigData.Dynamic[sFunc];
+        if not aVData then
+          return Print("The variable or command '"..sFunc.."' is invalid") ;
+        end
+        -- Value specified? Set it, report it and return
+        if sArgs then
+          SetDynSetting(sFunc, sArgs);
+          return Print(aVData.SD.." ("..sFunc..") has been set to "..sArgs);
+        end
+        -- Ask for input
+        local sCurrent = GetDynSetting(sFunc);
+        local sText = aVData.LD.."|n|nCurrent: |cffaaaa00"..sCurrent..
+          "|r|nDefault: |cffaaaa00"..aVData.DF.."|r";
+        local nMin = aVData.MI;
+        if nMin then sText = sText.."|nMinimum: |cffaaaa00"..nMin.."|r" end;
+        local nMax = aVData.MA;
+        if nMax then sText = sText.."|nMaximum: |cffaaaa00"..nMax.."|r" end;
+        return ShowInput(sText..
+          "|n|nSet value of |cffaaaaaa"..aVData.SD.."|r to?", sFunc, sCurrent);
+      end
       -- Get current setting and toggle it
       local bEnabled = SettingEnabled(sFunc);
       ConfigBooleanData[sFunc] = not bEnabled;
@@ -9565,15 +9592,14 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       if bEnabled then sMsg = sMsg.."disabled" else sMsg = sMsg.."enabled" end;
       Print(sMsg);
     end
+    -- Set uppercase version of command
+    ConfigData.CommandUpper = ConfigData.Command:upper();
     -- Make a local reference of function for our own use.
     SlashFunc = OnCommand;
-    -- Command as lower case and upper case
-    local sCmdLower = "mh";
-    local sCmdUpper = sCmdLower:upper();
     -- Prepare global variable for command
-    _G["SLASH_"..sCmdUpper.."1"] = "/"..sCmdLower;
+    _G["SLASH_"..ConfigData.CommandUpper.."1"] = "/"..ConfigData.Command;
     -- Assign command to slash command list
-    SlashCmdList[sCmdUpper] = SlashFunc;
+    SlashCmdList[ConfigData.CommandUpper] = SlashFunc;
   end,
   -- Timer system ---------------------------------------------------------- --
   function()
@@ -9850,19 +9876,21 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
             if sButton ~= "LeftButton" or not IsShiftKeyDown() or
               not SettingEnabled("tsbrprt") then return end;
             -- Get buff info and return if invalid buff
-            local sName, _, iLevels, _, nDuration, nExpire, _, _, _, iId =
-              UnitAura(oSelf.unit, oSelf.buttonInfo.index, oSelf.filter);
-            if not sName then return end;
+            local aData = C_UnitAuras.GetAuraDataByIndex(oSelf.unit,
+              oSelf.buttonInfo.index, oSelf.filter);
+            if not aData then return end;
+            local sName = aData.name;
             -- Get spell link from id and use link instead of name if found
-            local sLink = GetSpellLink(iId);
+            local sLink = C_Spell.GetSpellLink(aData.spellId);
             if sLink and #sLink > 0 then sName = sLink end;
             -- Start building message and dispatch it
             local sMsg;
-            if nDuration > 0 then sMsg = MakeTime(nExpire-GetTime()).." left";
+            if aData.duration > 0 then
+              sMsg = MakeTime(aData.expirationTime - GetTime()).." left";
             else sMsg = "No time limit" end;
             sMsg = sMsg.." on "..sName;
-            if iLevels > 1 then
-              sMsg = sMsg.."x"..BreakUpLargeNumbers(iLevels) end;
+            local iLevels = aData.charges;
+            if iLevels then sMsg = sMsg.."x"..BreakUpLargeNumbers(iLevels) end;
             SendChat("<"..sMsg..">");
           end);
         end
@@ -9876,14 +9904,12 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       Version.WebsiteFull, { r=1, g=0.5, b=1 });
     -- Check if version different
     local sType, sExtra;
-    if not mhconfig.vermajor or
-       not mhconfig.verminor or
+    if not mhconfig.version or
        not mhconfig.verextra then
       sType, sExtra = "installing",
         "Left click on the 'W' button on your mini-map to start "..
         "enabling features or right click on it for commands!";
-    elseif mhconfig.vermajor ~= Version.Major or
-           mhconfig.verminor ~= Version.Minor or
+    elseif mhconfig.version ~= Version.Release or
            mhconfig.verextra ~= Version.Extra then
       sType, sExtra = "upgrading to",
       "New configuration options are marked as |c000000ff<NEW>|r on the "..
@@ -9892,12 +9918,11 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     end
     -- Check for new initialisation
     if sType then
-      ShowMsg("Thanks for "..sType.." |c00ff00ffMhMod "..GetVersion()..
+      ShowMsg("Thanks for "..sType.." |c00ff00ffMhMod v"..GetVersion()..
         "|r! This dialog means that the add-on is successfully "..
         "activated and will not be shown again until you upgrade!|n|n"..
         sExtra);
-      mhconfig.vermajor = Version.Major;
-      mhconfig.verminor = Version.Minor;
+      mhconfig.version = Version.Release;
       mhconfig.verextra = Version.Extra;
     end
   end,
