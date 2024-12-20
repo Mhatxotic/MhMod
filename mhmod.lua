@@ -5,7 +5,7 @@ local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",
   Author      = "Mhat",
   Major       = 2,
-  Minor       = 2,
+  Minor       = 3,
   Extra       = "" ,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
@@ -893,11 +893,11 @@ EventsData =
       -- Get current time
       local nTime = GetTime();
       -- Remove reputation bar if automatically enabled by the addon
---      if GetWatchedFactionInfo() and
---        (nAutoCloseRepBarTime == -1 or nTime >= nAutoCloseRepBarTime) then
---        nAutoCloseRepBarTime = -1;
---        SetWatchedFactionIndex(0);
---      end
+      if C_Reputation.GetWatchedFactionData() and
+        (nAutoCloseRepBarTime == -1 or nTime >= nAutoCloseRepBarTime) then
+        nAutoCloseRepBarTime = -1;
+        C_Reputation.SetWatchedFactionByIndex(0);
+      end
       -- Done if chat log doesn't need pruning
       if bLoading or GetTimer("CLPT") or nTime - nChatLogLastPruned <
         GetDynSetting("LogPruningIntervalTime") then return end;
@@ -1748,7 +1748,6 @@ EventsData =
   -- The faction log was updated ---------------------------------------------
   UPDATE_FACTION = function()
     local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
-    local FactionDataNew = { };
     local FactionDataNew = { };
     local FactionHeaderCurrent;
     local FactionCount, FactionIndex = C_Reputation.GetNumFactions(), 1;
@@ -4388,7 +4387,6 @@ LocalCommandsData = {
         end
       end
     end
-
     local function InitOtherFrameEnhancements()
       if SettingEnabled("showbag") then
         MainMenuBarBackpackButtonCount:Hide();
@@ -9385,7 +9383,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       local HonourBarText = HonourBar.OverlayFrame.Text;
       hooksecurefunc(HonourBar, "SetBarText", function()
         if not SettingEnabled("advtrak") then return end;
-        HonourBarModified(ReputationBarText) end);
+        HonourBarModified(HonourBarText) end);
       -- Get experience bar and hook the event function
       local XPBar = aContainer.bars[4];
       local XPBarText = XPBar.OverlayFrame.Text;
@@ -9393,7 +9391,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         if not SettingEnabled("advtrak") then return end;
         XPBarModified(XPBarText) end);
       -- Get artefact bar and hook the event function
-      local ArtefactBar = aContainer.bars[4];
+      local ArtefactBar = aContainer.bars[5];
       local ArtefactBarText = ArtefactBar.OverlayFrame.Text;
       hooksecurefunc(ArtefactBar, "SetBarText", function()
         if not SettingEnabled("advtrak") then return end;
