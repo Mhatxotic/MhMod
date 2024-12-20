@@ -5,7 +5,7 @@ local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",
   Author      = "Mhat",
   Major       = 2,
-  Minor       = 1,
+  Minor       = 2,
   Extra       = "" ,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
@@ -52,9 +52,9 @@ local iXPLeft                 = 0;     -- XP needed to level
 local iXPMax                  = 0;     -- XP total needed to level
 local iXPSession              = 0;     -- XP gathered this session
 local iXPLastGain             = 0;     -- Last XP gain
--- Artifact data --------------------------------------------------------------
-local iArtifactXPLast         = 0;     -- Last artifact gain
-local iArtifactXPTotal        = 0;     -- Artifact XP total
+-- Artefact data --------------------------------------------------------------
+local iArtefactXPLast         = 0;     -- Last artefact gain
+local iArtefactXPTotal        = 0;     -- Artefact XP total
 -- Money ----------------------------------------------------------------------
 local iMoney                  = 0;     -- Current money
 local iMoneySession           = 0;     -- Money gained this session
@@ -63,7 +63,6 @@ local MoneyData;                       -- Money statistical data
 local EventsData;                      -- Global event hooks
 local UnitEventsData;                  -- Unit events data
 local FrameEventHookData;              -- Blizzard frames event hooks
-local ClassFunctionHookData;           -- Blizzard class function hooks
 local FunctionHookData;                -- Blizzard function hooks
 local LocalCommandsData;               -- Contains /mh commands data
 local RemoteCommandsData;              -- Contains !mh commands data
@@ -182,7 +181,7 @@ local StringToColour;                  -- Convert a string to a colour code
 local StripColour;                     -- Strip colour from text
 local TableSize;                       -- Return size of a keystring table
 local TriggerTimer;                    -- Trigger a created timer
-local GetActiveArtifactInfo;           -- Get active artifact info
+local GetActiveArtefactInfo;           -- Get active artefact info
 local UnitFrameUpdate;                 -- Update unit frame
 local UnitIsFriend;                    -- Specified unit is a friend
 local UpdateGroupTrackData;            -- Update group tracker data
@@ -203,7 +202,7 @@ local InitsData = {                    -- Inits data structure
   Bags                       = false;  -- Bags initialised?
   Money                      = false;  -- Money initialised?
   XP                         = false;  -- Experience initialised?
-  Artifact                   = false;  -- Artifact initialised?
+  Artefact                   = false;  -- Artifact initialised?
   Archaeology                = false;  -- Archaeology initialised?
   Battleground               = false;  -- Battleground data initialised?
   BGScores                   = false;  -- Battleground scores initialised?
@@ -854,41 +853,6 @@ local BGYellData = {
       R="The Stormpike Stable Master requires assistance in Dun Baldar." },
   },
 };
-  local function TextStatusBar_UpdateTextString(oFrame)
-    -- Return if frame is invalid
-    if not oFrame then return end;
-    -- If frame has a text string
-    local oSubFrame = oFrame.TextString;
-    if oSubFrame then
-      local _, nMax = oFrame:GetMinMaxValues();
-      if nMax <= 0 then
-        if oSubFrame:IsShown() then oSubFrame:Hide() end
-        return;
-      end
-      local nCur = oFrame:GetValue();
-      ProcessTextString(oSubFrame, nCur/nMax*100, OneOrBoth(nCur,nMax));
-    end
-    -- Return if the unit isn't specified or doesn't exist
-    local sUnit = oFrame.unit;
-    if not sUnit or not UnitExists(sUnit) then return end;
-    -- Get frame health bar and return if invalid or a power bar
-    oSubFrame = oFrame.healthbar or oFrame;
-    if not oSubFrame or oSubFrame.powerType or
-      not oSubFrame.SetStatusBarColor then return end;
-    -- Use the default green colour if the unit frame enhancements setting is
-    -- disabled.
-    if not SettingEnabled("unitnpe") then
-      return oSubFrame:SetStatusBarColor(0, 1, 0) end;
-    -- Get the class of the unit and return if there is no class
-    local _, sClass = UnitClass(sUnit);
-    if not sClass then return end;
-    -- Set the health bar to the colour of the class. For some reason, instead
-    -- of Blizzard using gray textures so devs can set any colour the want,
-    -- they decided to use a yellow texture so that limits the colours, so
-    -- we'll have to try and offset that.
-    local aCol = RAID_CLASS_COLORS[sClass];
-    oSubFrame:SetStatusBarColor(aCol.r-0.37, aCol.g-0.75, aCol.b-0.10);
-  end
 -- == Main frame events =======================================================
 EventsData =
 { -- Player entering world and all character data loaded ---------------------
@@ -1785,31 +1749,36 @@ EventsData =
   UPDATE_FACTION = function()
     local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
     local FactionDataNew = { };
+    local FactionDataNew = { };
     local FactionHeaderCurrent;
---  FIXME  local FactionCount, FactionIndex = GetNumFactions(), 1;
-    local FactionCount, FactionIndex = 0, 1;
+    local FactionCount, FactionIndex = C_Reputation.GetNumFactions(), 1;
     local FactionCollapse = { };
     while FactionIndex <= FactionCount do
-      local FactionName, _, _, FactionBottom, FactionTop, FactionTotal, _, _,
-        FactionIsHeader, FactionIsCollapsed, _, _, _, FactionId =
-          GetFactionInfo(FactionIndex);
-      if FactionId then
-        if FactionIsHeader then
+      local FactionData = C_Reputation.GetFactionDataByID(FactionIndex);
+      if FactionData then
+        local FactionName = FactionData.name;
+        if FactionData.isHeader then
           FactionHeaderCurrent = FactionName;
           if FactionIsCollapsed then
-            ExpandFactionHeader(FactionIndex);
+            C_Reputation.ExpandFactionHeader(FactionIndex);
             FactionCount = GetNumFactions();
             tinsert(FactionCollapse, FactionIndex);
           end
         end
+        local FactionID = FactionData.factionID;
         local FactionPCurrent, FactionPTop =
-          C_Reputation.GetFactionParagonInfo(FactionId);
+          C_Reputation.GetFactionParagonInfo(FactionID);
+        local FactionBottom = FactionData.currentReactionThreshold;
         FactionDataNew[FactionName] = {
-          I  = FactionIndex,  C  = FactionHeaderCurrent,
-          B  = FactionBottom, H  = FactionTop,
-          T  = FactionTotal,  R  = FactionRankData[FactionBottom],
-          U =  FactionId,     PT = FactionPCurrent,
-          PH = FactionPTop
+          B  = FactionBottom,
+          C  = FactionHeaderCurrent,
+          H  = FactionData.nextReactionThreshold,
+          I  = FactionIndex,
+          PH = FactionPTop,
+          PT = FactionPCurrent,
+          R  = FactionRankData[FactionBottom],
+          T  = FactionData.currentStanding,
+          U  = FactionID
         };
       end
       FactionIndex = FactionIndex + 1;
@@ -1877,8 +1846,7 @@ EventsData =
         end
         if HighestId <= 0 then return end;
         SetWatchedFactionIndex(HighestId);
-        nAutoCloseRepBarTime =
-          GetTime() + GetDynSetting("HideRepBarTimeout");
+        nAutoCloseRepBarTime = GetTime() + GetDynSetting("HideRepBarTimeout");
         AutoFactionData = { };
       end, 1, "FactionCalculator");
     end
@@ -2533,7 +2501,7 @@ EventsData =
   end,
   -- Artifact power updated --------------------------------------------------
   ARTIFACT_XP_UPDATE = function()
-    -- Get new artifact data and return if not available
+    -- Get new artefact data and return if not available
     local iId, _, _, _, iXPTotal, iSpent, _, _, _, _, _, _, iTier =
       C_ArtifactUI.GetEquippedArtifactInfo();
     if not iId then return end;
@@ -2542,13 +2510,13 @@ EventsData =
       ArtifactBarGetNumArtifactTraitsPurchasableFromXP(iSpent,
         iXPTotal, iTier);
     -- Set and cache total
-    iArtifactXPTotal = iXPTotal;
+    iArtefactXPTotal = iXPTotal;
     -- Done if not initialised yet
-    if not InitsData.Artifact then InitsData.Artifact = true return end;
-    -- Done Ii there was no change in artifact xp
+    if not InitsData.Artefact then InitsData.Artefact = true return end;
+    -- Done Ii there was no change in artefact xp
     -- Calculate and cache gain (or loss)
     local iGain = iXPTotal - iXP;
-    iArtifactXPLast = iGain;
+    iArtefactXPLast = iGain;
     if iGain <= 0 then return end;
     -- Prepare message
     local sMsg = "Received "..FormatNumber(iGain)..
@@ -2613,7 +2581,7 @@ EventsData =
       sMsg = sMsg.."; x"..FormatNumber(ceil(iHonourGainsLeft));
     end
     Print(sMsg..")", ChatTypeInfo.COMBAT_HONOR_GAIN);
-    TextStatusBar_UpdateTextString(HonorWatchBar.OverlayFrame.Text);
+--    TextStatusBar_UpdateTextString(HonorWatchBar.OverlayFrame.Text);
   end,
   -- Exhaustion updated ------------------------------------------------------
   UPDATE_EXHAUSTION = function()
@@ -2758,7 +2726,7 @@ EventsData =
           if Value == 1 then Value = sNull;
           else Value = "x"..BreakUpLargeNumbers(Value) end
           local Name, _, _, _, Extra = GetArchaeologyRaceInfo(ItemId);
-          local sMsg = What.." ".."artifact |Hspell:80451|h|cffffafff["..Name..
+          local sMsg = What.." ".."artefact |Hspell:80451|h|cffffafff["..Name..
             "]|r|h"..Value.." (Total: "..BreakUpLargeNumbers(ItemCount);
           if Extra > 0 then
             sMsg = sMsg.."; Max: "..BreakUpLargeNumbers(Extra);
@@ -3101,7 +3069,7 @@ UnitEventsData = {
     end
     -- Use a timer so we don't have this triggered multiple times
     CreateTimer(0.5, function()
-      -- Cache updated artifact values
+      -- Cache updated artefact values
       EventsData.ARTIFACT_XP_UPDATE();
       -- Check item level
       local _, iEqILv = GetAverageItemLevel();
@@ -3148,8 +3116,7 @@ UnitEventsData = {
     elseif nAwayFromKeyboard ~= 0 then
       PassOnLoot(true);
       KillTimer("AFKT");
-      TextStatusBar_UpdateTextString(PlayerFrame.PlayerFrameContent.
-        PlayerFrameContentMain.ManaBarArea.ManaBar);
+      PlayerFrame_GetManaBar():UpdateTextString();
       ShowDelayedWhispers();
       nAwayFromKeyboard = 0;
     end
@@ -4229,7 +4196,7 @@ LocalCommandsData = {
             HealthBarText:SetFont("fonts\\frizqt__.ttf", 10, "");
             HealthBarText:SetShadowColor(0, 0, 0);
             HealthBarText:SetShadowOffset(1, -1);
-            TextStatusBar_UpdateTextString(HealthBar);
+            HealthBar:UpdateTextString();
           end
         end
         -- Setup mana bar text
@@ -4240,7 +4207,7 @@ LocalCommandsData = {
             ManaBarText:SetFont("fonts\\frizqt__.ttf", 10, "");
             ManaBarText:SetShadowColor(0, 0, 0);
             ManaBarText:SetShadowOffset(1, -1);
-            TextStatusBar_UpdateTextString(ManaBar);
+            ManaBar:UpdateTextString();
           end
         end
         -- Update nameplate / target
@@ -5448,34 +5415,6 @@ RemoteCommandsData =
       " requested an invite and was automatically invited");
   end
 };
--- == SECURE CLASS FUNCTION HOOKS ============================================
-ClassFunctionHookData =
-{ -- PLAYER FRAME HEALTH/MANA BAR --------------------------------------------
-  { PlayerFrame_GetHealthBar(), "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  { PlayerFrame_GetManaBar(), "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  -- TARGET FRAME HEALTH/MANA BAR ---------------------------------------------
-  { TargetFrame.manabar, "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  { TargetFrame.healthbar, "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  -- TARGET OF TARGET FRAME HEALTH/MANA BAR ----------------------------------
-  { TargetFrameToT.manabar, "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  { TargetFrameToT.healthbar, "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  -- FOCUS FRAME HEALTH/MANA BAR ---------------------------------------------
-  { FocusFrame.manabar, "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  { FocusFrame.healthbar, "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  -- PET FRAME HEALTH/MANA BAR -----------------------------------------------
-  { PetFrame.manabar, "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-  { PetFrame.healthbar, "UpdateTextString",
-    TextStatusBar_UpdateTextString },
-};-- -------------------------------------------------------------------------
 -- == SECURE FUNCTION HOOKS ==================================================
 FunctionHookData =
 { -- -------------------------------------------------------------------------
@@ -5570,12 +5509,12 @@ FunctionHookData =
     -- if it is not showing.
     local oFrame = ArtifactWatchBar.OverlayFrame.Text;
     if not oFrame then return end;
-    -- Get current artifact (cached)
+    -- Get current artefact (cached)
     local sName = sArtifactName;
     if not sName then return end;
     -- Get other data
     local iXP, iMax, iNX, iAvailable, iTotal = iArtifactXP, iArtifactXPMax,
-      iArtifactXPNext, iArtifactAvailable, iArtifactXPTotal;
+      iArtifactXPNext, iArtifactAvailable, iArtefactXPTotal;
     -- Calculate percentage
     local LPercent = iXP/iMax*100;
     -- Start building bar text
@@ -8303,8 +8242,8 @@ GetDurability = function()
   return iTotalCurrent, iTotalMaximum, iTotalCurrent/iTotalMaximum*100
 end
 -- ===========================================================================
-GetActiveArtifactInfo = function()
-  -- Get equipped artifact data and return if none
+GetActiveArtefactInfo = function()
+  -- Get equipped artefact data and return if none
   local aData = C_ArtifactUI.GetEquippedArtifactInfo();
   if not aData then return end;
   -- Get parts
@@ -8316,7 +8255,7 @@ GetActiveArtifactInfo = function()
   local iAvailable = 0;
   -- Function to calculate cost (used twice)
   local function C() return fFunc(iSpent + iAvailable, iTier) or 0 end;
-  -- Maximum artifact power
+  -- Maximum artefact power
   local iMax = C();
   -- Save total xp
   local iTotalXP = iXP;
@@ -8635,13 +8574,11 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   end,
   -- Blizzard UI hooks ----------------------------------------------------- --
   function()
+    -- Hook chat events
     foreach(ChatEventsData, ChatFrame_AddMessageEventFilter);
-    CreateTimer(1, function()
-      foreach(FunctionHookData, hooksecurefunc);
-      for iIndex = 1, #ClassFunctionHookData do
-        hooksecurefunc(unpack(ClassFunctionHookData[iIndex]));
-      end
-    end, 1, "HookSecureFunctions");
+    -- Hook Blizzard secure functions
+    foreach(FunctionHookData, hooksecurefunc);
+    -- Hook Blizzard secure script events
     for Type, TypeData in pairs(FrameEventHookData) do
       for Name, Function in pairs(TypeData) do
         local Frame = _G[Name];
@@ -8650,6 +8587,51 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
           else Frame:SetScript(Type, Function) end;
         end
       end
+    end
+    -- Status bar updater function
+    local function StatusBarUpdate(oFrame)
+      -- Return if frame is invalid
+      if not oFrame then return end;
+      -- If frame has a text string
+      local oSubFrame = oFrame.TextString;
+      if oSubFrame then
+        local _, nMax = oFrame:GetMinMaxValues();
+        if nMax <= 0 then
+          if oSubFrame:IsShown() then oSubFrame:Hide() end
+          return;
+        end
+        local nCur = oFrame:GetValue();
+        ProcessTextString(oSubFrame, nCur/nMax*100, OneOrBoth(nCur,nMax));
+      end
+      -- Return if the unit isn't specified or doesn't exist
+      local sUnit = oFrame.unit;
+      if not sUnit or not UnitExists(sUnit) then return end;
+      -- Get frame health bar and return if invalid or a power bar
+      oSubFrame = oFrame.healthbar or oFrame;
+      if not oSubFrame or oSubFrame.powerType or
+        not oSubFrame.SetStatusBarColor then return end;
+      -- Use the default green colour if the unit frame enhancements setting is
+      -- disabled.
+      if not SettingEnabled("unitnpe") then
+        return oSubFrame:SetStatusBarColor(0, 1, 0) end;
+      -- Get the class of the unit and return if there is no class
+      local _, sClass = UnitClass(sUnit);
+      if not sClass then return end;
+      -- Set the health bar to the colour of the class. For some reason, instead
+      -- of Blizzard using gray textures so devs can set any colour the want,
+      -- they decided to use a yellow texture so that limits the colours, so
+      -- we'll have to try and offset that.
+      local aCol = RAID_CLASS_COLORS[sClass];
+      oSubFrame:SetStatusBarColor(aCol.r-0.37, aCol.g-0.75, aCol.b-0.10);
+    end
+    for iIndex, aSBFrame in ipairs({
+      PlayerFrame_GetHealthBar(), PlayerFrame_GetManaBar(),
+      TargetFrame.healthbar,      TargetFrame.manabar,
+      TargetFrameToT.healthbar,   TargetFrameToT.manabar,
+      FocusFrame.healthbar,       FocusFrame.manabar,
+      PetFrame.healthbar,         PetFrame.manabar
+    }) do
+      hooksecurefunc(aSBFrame, "UpdateTextString", StatusBarUpdate);
     end
   end,
   -- Other hacks ----------------------------------------------------------- --
@@ -8785,15 +8767,14 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       -- Update dps value
       Update();
     end);
+    -- Update value and position
+    UpdatePosition();
     -- Wait for events
     oFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
     oFrame:RegisterEvent("PLAYER_REGEN_ENABLED");
     oFrame:RegisterEvent("PLAYER_REGEN_DISABLED");
     oFrame:RegisterUnitEvent("UNIT_ENTERED_VEHICLE", "player");
     oFrame:RegisterUnitEvent("UNIT_EXITED_VEHICLE", "player");
-    -- Update value and position
-    UpdatePosition();
-    Update();
   end,
   -- Tooltip frame enhancements -------------------------------------------- --
   function()
@@ -9319,102 +9300,104 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   end,
   -- Experience bars enhancemnts ------------------------------------------- --
   function()
-    -- Init experience, reputation and honour bar enhancements
-    for _, aData in ipairs({
-      -- Init experience bar
-      { 1, 4, function(oText)
-        -- Build new text string
-        local sText = "XP="..BreakUpLargeNumbers(iCurrentXP).."/"..
-          FormatNumber(iXPMax)..
-          " ("..RoundNumber(iCurrentXP/iXPMax*100, 2).."%); NX="..
-          FormatNumber(iXPMax-iCurrentXP);
-        -- Add gains remaining
-        if iXPGainsLeft >= 1 and iXPGainsLeft < 1000 then
-          sText = sText.." (x"..ceil(iXPGainsLeft)..")";
-        end
-        -- Add exhaustion
-        if GetXPExhaustion() then
-          sText = sText.."; RX="..BreakUpLargeNumbers(GetXPExhaustion())..
-            " ("..RoundNumber(GetXPExhaustion()/iXPMax*100, 2).."%)";
-        end
-        -- Updte the text string
-        ProcessTextString(oText, iCurrentXP/iXPMax*100, sText);
-      end },
-      -- Init reputation bar
-      { 1, 1, function(oText)
-        local Name, _, _, _, Cur = GetWatchedFactionInfo();
-        if not Name then return end;
-        local Data = FactionData[Name];
-        if not Data then return end;
-        Cur = Cur + 43000;
-        local Percent = Cur/85000*100;
-        local Min, Max = Data.T-Data.B, Data.H-Data.B;
-        local LPercent = Min/Max*100;
-        local sCat = Data.C;
-        if sCat and sCat ~= Name then Name = Name.." of "..sCat end;
-        local Text = Name..": "..OneOrBoth(Cur,85000).." ("..
-          RoundNumber(Percent,2).."%)";
-        if Data.R then Text = Text.."; "..Data.R end;
-        if Percent < 100 then
-          Text = Text..": "..OneOrBoth(Min,Max)..
-            " ("..RoundNumber(LPercent,2).."%)";
-        end
-        if Data.PT then
-          Cur = Data.PT % Data.PH;
-          LPercent = Cur/Data.PH*100
-          Text = Text.."; B="..OneOrBoth(Cur, Data.PH)..
-            " ("..RoundNumber(LPercent,2).."%)";
-        end
-        ProcessTextString(oText, LPercent, Text);
-      end },
-      -- Init Honour bar
-      { 1, 2, function(oText)
-        if not SettingEnabled("advtrak") then return end;
-        local Text = "HXP="..BreakUpLargeNumbers(iHonour).."/"..
-          FormatNumber(iHonourMax)..
-          " ("..RoundNumber(iHonour/iHonourMax*100, 2).."%); LV="..iHonourLevel..
-          "; NX="..FormatNumber(iHonourMax-iHonour);
-        if iHonourGainsLeft >= 1 and iHonourGainsLeft < 1000 then
-          Text = Text.." (x"..ceil(iHonourGainsLeft)..")";
-        end
-        return ProcessTextString(oText, iHonour/iHonourMax*100, Text);
-      end },
-      -- Init Artifact bar
-      { 1, 5, function(oText)
-        -- Get new artifact data
-        local sName, iXP, iMax, iNX, iAvail, iTotal = GetActiveArtifactInfo();
-        if not sName then return end;
-        -- Calculate percent
-        local nPercent = iXP / iMax * 100;
-        -- Set the new text string
-        return ProcessTextString(oText, nPercent, sName.."; ".."AXP="..
-          FormatNumber(iXP).."/"..FormatNumber(iXPMax).."("..
-          RoundNumber(nPercent, 2).."%); NX="..FormatNumber(iXPNext));
-      end }
-    }) do
-      -- Get container frame
-      local oContainer = StatusTrackingBarManager.barContainers[aData[1]];
-      assert(type(oContainer)=="table", "Invalid container id!");
-      -- Get container bar frame
-      local oBar = oContainer.bars[aData[2]];
-      assert(type(oBar)=="table", "Invalid container bar id!");
-      -- Get bar frame
-      local oStatusBar = oBar.StatusBar;
-      assert(type(oStatusBar)=="table", "Invalid status bar!");
-      -- The bar's status bar text class
-      local oStatusText = oBar.OverlayFrame.Text;
-      assert(type(oStatusText)=="table", "Invalid fontstring!");
-      -- Callback
-      local fCallback = aData[3];
-      -- Update function
-      local function OnUpdate()
-        -- Send to callback if setting is enabled
-        if SettingEnabled("advtrak") then fCallback(oStatusText) end;
+    -- Reputation bar text was modified
+    local function ReputationBarModified(oText)
+      local Data = C_Reputation.GetWatchedFactionData();
+      if not Data then return end;
+      Data = FactionData[Data.name];
+      if not Data then return end;
+      Cur = Cur + 43000;
+      local Percent = Cur/85000*100;
+      local Min, Max = Data.T-Data.B, Data.H-Data.B;
+      local LPercent = Min/Max*100;
+      local sCat = Data.C;
+      if sCat and sCat ~= Name then Name = Name.." of "..sCat end;
+      local Text = Name..": "..OneOrBoth(Cur,85000).." ("..
+        RoundNumber(Percent,2).."%)";
+      if Data.R then Text = Text.."; "..Data.R end;
+      if Percent < 100 then
+        Text = Text..": "..OneOrBoth(Min,Max)..
+          " ("..RoundNumber(LPercent,2).."%)";
       end
-      -- Register overrides
-      oStatusBar:HookScript("OnValueChanged", OnUpdate);
-      oStatusBar:HookScript("OnShow", OnUpdate);
-      oStatusBar:HookScript("OnEnter", OnUpdate);
+      if Data.PT then
+        Cur = Data.PT % Data.PH;
+        LPercent = Cur/Data.PH*100
+        Text = Text.."; B="..OneOrBoth(Cur, Data.PH)..
+          " ("..RoundNumber(LPercent,2).."%)";
+      end
+      ProcessTextString(oText, LPercent, Text);
+    end
+    -- Honour bar text was modified
+    local function HonourBarModified(oText)
+      local Text = "HXP="..BreakUpLargeNumbers(iHonour).."/"..
+        FormatNumber(iHonourMax)..
+        " ("..RoundNumber(iHonour/iHonourMax*100, 2).."%); LV="..iHonourLevel..
+        "; NX="..FormatNumber(iHonourMax-iHonour);
+      if iHonourGainsLeft >= 1 and iHonourGainsLeft < 1000 then
+        Text = Text.." (x"..ceil(iHonourGainsLeft)..")";
+      end
+      return ProcessTextString(oText, iHonour/iHonourMax*100, Text);
+    end
+    -- Experience bar text was modified
+    local function XPBarModified(oText)
+      -- Build new text string
+      local sText = "XP="..BreakUpLargeNumbers(iCurrentXP).."/"..
+        FormatNumber(iXPMax)..
+        " ("..RoundNumber(iCurrentXP/iXPMax*100, 2).."%); NX="..
+        FormatNumber(iXPMax-iCurrentXP);
+      -- Add gains remaining
+      if iXPGainsLeft >= 1 and iXPGainsLeft < 1000 then
+        sText = sText.." (x"..ceil(iXPGainsLeft)..")";
+      end
+      -- Add exhaustion
+      if GetXPExhaustion() then
+        sText = sText.."; RX="..BreakUpLargeNumbers(GetXPExhaustion())..
+          " ("..RoundNumber(GetXPExhaustion()/iXPMax*100, 2).."%)";
+      end
+      -- Updte the text string
+      ProcessTextString(oText, iCurrentXP/iXPMax*100, sText);
+    end
+    -- Artefact bar text was modified
+    local function ArtefactBarModified(oText)
+      -- Get new artefact data
+      local sName, iXP, iMax, iNX, iAvail, iTotal = GetActiveArtefactInfo();
+      if not sName then return end;
+      -- Calculate percent
+      local nPercent = iXP / iMax * 100;
+      -- Set the new text string
+      ProcessTextString(oText, nPercent, sName.."; ".."AXP="..
+        FormatNumber(iXP).."/"..FormatNumber(iXPMax).."("..
+        RoundNumber(nPercent, 2).."%); NX="..FormatNumber(iXPNext));
+    end
+    -- For each container (e.g. 1,4+2,1 = XP+Rep Bar)
+    local aContainers = StatusTrackingBarManager.barContainers;
+    for iIndex = 1, #aContainers do
+      -- Get next container
+      local aContainer = aContainers[iIndex];
+      -- Get reputation bar and hook the event function
+      local ReputationBar = aContainer.bars[1];
+      local ReputationBarText = ReputationBar.OverlayFrame.Text;
+      hooksecurefunc(ReputationBar, "SetBarText", function()
+        if not SettingEnabled("advtrak") then return end;
+        ReputationBarModified(ReputationBarText) end);
+      -- Get honour bar and hook the event function
+      local HonourBar = aContainer.bars[2];
+      local HonourBarText = HonourBar.OverlayFrame.Text;
+      hooksecurefunc(HonourBar, "SetBarText", function()
+        if not SettingEnabled("advtrak") then return end;
+        HonourBarModified(ReputationBarText) end);
+      -- Get experience bar and hook the event function
+      local XPBar = aContainer.bars[4];
+      local XPBarText = XPBar.OverlayFrame.Text;
+      hooksecurefunc(XPBar, "SetBarText", function()
+        if not SettingEnabled("advtrak") then return end;
+        XPBarModified(XPBarText) end);
+      -- Get artefact bar and hook the event function
+      local ArtefactBar = aContainer.bars[4];
+      local ArtefactBarText = ArtefactBar.OverlayFrame.Text;
+      hooksecurefunc(ArtefactBar, "SetBarText", function()
+        if not SettingEnabled("advtrak") then return end;
+        XPBarModified(ArtefactBarText) end);
     end
   end,
   -- Action bars ----------------------------------------------------------- --
