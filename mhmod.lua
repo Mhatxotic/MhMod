@@ -5,7 +5,7 @@ local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",
   Author      = "Mhat",
   Major       = 2,
-  Minor       = 0,
+  Minor       = 1,
   Extra       = "" ,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
@@ -63,6 +63,7 @@ local MoneyData;                       -- Money statistical data
 local EventsData;                      -- Global event hooks
 local UnitEventsData;                  -- Unit events data
 local FrameEventHookData;              -- Blizzard frames event hooks
+local ClassFunctionHookData;           -- Blizzard class function hooks
 local FunctionHookData;                -- Blizzard function hooks
 local LocalCommandsData;               -- Contains /mh commands data
 local RemoteCommandsData;              -- Contains !mh commands data
@@ -336,6 +337,8 @@ local StatsCatsData = {
 };
 -- Variables and commands list -----------------------------------------------
 local ConfigData = {
+  Command = "mh",                      -- Command as lower case
+  CommandUpper = sNull,                -- Filled in at init
   Options = {
     ["Achievement"] = {
       autoaap = { R=0, SD="Announce achievement progress",          LD="Automatically announce achievement progress" },
@@ -851,6 +854,41 @@ local BGYellData = {
       R="The Stormpike Stable Master requires assistance in Dun Baldar." },
   },
 };
+  local function TextStatusBar_UpdateTextString(oFrame)
+    -- Return if frame is invalid
+    if not oFrame then return end;
+    -- If frame has a text string
+    local oSubFrame = oFrame.TextString;
+    if oSubFrame then
+      local _, nMax = oFrame:GetMinMaxValues();
+      if nMax <= 0 then
+        if oSubFrame:IsShown() then oSubFrame:Hide() end
+        return;
+      end
+      local nCur = oFrame:GetValue();
+      ProcessTextString(oSubFrame, nCur/nMax*100, OneOrBoth(nCur,nMax));
+    end
+    -- Return if the unit isn't specified or doesn't exist
+    local sUnit = oFrame.unit;
+    if not sUnit or not UnitExists(sUnit) then return end;
+    -- Get frame health bar and return if invalid or a power bar
+    oSubFrame = oFrame.healthbar or oFrame;
+    if not oSubFrame or oSubFrame.powerType or
+      not oSubFrame.SetStatusBarColor then return end;
+    -- Use the default green colour if the unit frame enhancements setting is
+    -- disabled.
+    if not SettingEnabled("unitnpe") then
+      return oSubFrame:SetStatusBarColor(0, 1, 0) end;
+    -- Get the class of the unit and return if there is no class
+    local _, sClass = UnitClass(sUnit);
+    if not sClass then return end;
+    -- Set the health bar to the colour of the class. For some reason, instead
+    -- of Blizzard using gray textures so devs can set any colour the want,
+    -- they decided to use a yellow texture so that limits the colours, so
+    -- we'll have to try and offset that.
+    local aCol = RAID_CLASS_COLORS[sClass];
+    oSubFrame:SetStatusBarColor(aCol.r-0.37, aCol.g-0.75, aCol.b-0.10);
+  end
 -- == Main frame events =======================================================
 EventsData =
 { -- Player entering world and all character data loaded ---------------------
@@ -891,11 +929,11 @@ EventsData =
       -- Get current time
       local nTime = GetTime();
       -- Remove reputation bar if automatically enabled by the addon
-      if GetWatchedFactionInfo() and
-        (nAutoCloseRepBarTime == -1 or nTime >= nAutoCloseRepBarTime) then
-        nAutoCloseRepBarTime = -1;
-        SetWatchedFactionIndex(0);
-      end
+--      if GetWatchedFactionInfo() and
+--        (nAutoCloseRepBarTime == -1 or nTime >= nAutoCloseRepBarTime) then
+--        nAutoCloseRepBarTime = -1;
+--        SetWatchedFactionIndex(0);
+--      end
       -- Done if chat log doesn't need pruning
       if bLoading or GetTimer("CLPT") or nTime - nChatLogLastPruned <
         GetDynSetting("LogPruningIntervalTime") then return end;
@@ -1748,7 +1786,8 @@ EventsData =
     local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
     local FactionDataNew = { };
     local FactionHeaderCurrent;
-    local FactionCount, FactionIndex = GetNumFactions(), 1;
+--  FIXME  local FactionCount, FactionIndex = GetNumFactions(), 1;
+    local FactionCount, FactionIndex = 0, 1;
     local FactionCollapse = { };
     while FactionIndex <= FactionCount do
       local FactionName, _, _, FactionBottom, FactionTop, FactionTotal, _, _,
@@ -2574,8 +2613,7 @@ EventsData =
       sMsg = sMsg.."; x"..FormatNumber(ceil(iHonourGainsLeft));
     end
     Print(sMsg..")", ChatTypeInfo.COMBAT_HONOR_GAIN);
-    FunctionHookData.
-      TextStatusBar_UpdateTextString(HonorWatchBar.OverlayFrame.Text);
+    TextStatusBar_UpdateTextString(HonorWatchBar.OverlayFrame.Text);
   end,
   -- Exhaustion updated ------------------------------------------------------
   UPDATE_EXHAUSTION = function()
@@ -3920,10 +3958,9 @@ LocalCommandsData = {
         ParameterU.."|r\n\n|cffaaaaaaBrief description of variable...|r\n"..
         vardata.SD..".\n\n|cffaaaaaaDetailed description of variable...|r\n"..
         vardata.LD..".\n\n|cff00ff00This setting is currently set to|r "..
-        setting..".\n\n|cffaaaaaaTo toggle this setting, type|r "..
-        "|cff0000ff/"..Command.." "..Parameter..".|r.", "Help for setting "..
-          ParameterU,
-        "EDITOR");
+        setting..".\n\n|cffaaaaaaTo toggle this setting, type|r |cff0000ff/"..
+        ConfigData.Command.." "..Parameter..".|r.",
+        "Help for setting "..ParameterU, "EDITOR");
     else
       ShowMsg("The variable or command |cffaaaaaa"..Parameter..
         "|r is not recognised", "help");
@@ -3993,8 +4030,8 @@ LocalCommandsData = {
   cmds = function()
     local M = "This is a full list of commands that MhMod Addon supports:\n"..
       "\nIf you want to use a command here, simply type "..
-      "|cff0000ff/"..Command.." <cmd>|r, where <cmd> is any of the commands "..
-      "in blue specified below...\n";
+      "|cff0000ff/"..ConfigData.Command.." <cmd>|r, "..
+      "where <cmd> is any of the commands in blue specified below...\n";
     local C = 0;
     local I = 0;
     for K, V in pairs(ConfigData.Commands) do
@@ -4011,8 +4048,8 @@ LocalCommandsData = {
   end,
   vars = function()
     local M = "This is a full list of variables that MhMod Addon supports:\n"..
-      "\nIf you want to toggle an option off or on, simply type "..
-      "|cff0000ff/"..Command.." <varname>|r, where <varname> is any of the "..
+      "\nIf you want to toggle an option off or on, simply type |cff0000ff/"..
+      ConfigData.Command.." <varname>|r, where <varname> is any of the "..
       "options in blue specified below...\n";
     local C, I, S = 0, 0;
     for K, V in pairs(ConfigData.Options) do
@@ -4192,7 +4229,7 @@ LocalCommandsData = {
             HealthBarText:SetFont("fonts\\frizqt__.ttf", 10, "");
             HealthBarText:SetShadowColor(0, 0, 0);
             HealthBarText:SetShadowOffset(1, -1);
-            FunctionHookData.TextStatusBar_UpdateTextString(HealthBar);
+            TextStatusBar_UpdateTextString(HealthBar);
           end
         end
         -- Setup mana bar text
@@ -4203,7 +4240,7 @@ LocalCommandsData = {
             ManaBarText:SetFont("fonts\\frizqt__.ttf", 10, "");
             ManaBarText:SetShadowColor(0, 0, 0);
             ManaBarText:SetShadowOffset(1, -1);
-            FunctionHookData.TextStatusBar_UpdateTextString(ManaBar);
+            TextStatusBar_UpdateTextString(ManaBar);
           end
         end
         -- Update nameplate / target
@@ -4226,7 +4263,7 @@ LocalCommandsData = {
         [17] = "fury",        [18] = "pain"
       }
       local function OnClicked(Self, Button)
-        if not IsShiftKeyDown() or GetMouseFocus() ~= Self then return end;
+        if not IsShiftKeyDown() or GetMouseFoci()[1] ~= Self then return end;
         if Self == ContainerFrame1MoneyFrameGoldButton or
                Self == ContainerFrame1MoneyFrameSilverButton or
                Self == ContainerFrame1MoneyFrameCopperButton then
@@ -5171,7 +5208,7 @@ LocalCommandsData = {
     end
   end,
   mo = function()
-    local oFocus = GetMouseFocus();
+    local oFocus = GetMouseFoci()[1];
     local sRes;
     if          oFocus  == nil         then sRes = "Frame no found";
     elseif type(oFocus) ~= "table"     then sRes = "Frame not valid table";
@@ -5411,6 +5448,34 @@ RemoteCommandsData =
       " requested an invite and was automatically invited");
   end
 };
+-- == SECURE CLASS FUNCTION HOOKS ============================================
+ClassFunctionHookData =
+{ -- PLAYER FRAME HEALTH/MANA BAR --------------------------------------------
+  { PlayerFrame_GetHealthBar(), "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  { PlayerFrame_GetManaBar(), "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  -- TARGET FRAME HEALTH/MANA BAR ---------------------------------------------
+  { TargetFrame.manabar, "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  { TargetFrame.healthbar, "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  -- TARGET OF TARGET FRAME HEALTH/MANA BAR ----------------------------------
+  { TargetFrameToT.manabar, "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  { TargetFrameToT.healthbar, "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  -- FOCUS FRAME HEALTH/MANA BAR ---------------------------------------------
+  { FocusFrame.manabar, "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  { FocusFrame.healthbar, "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  -- PET FRAME HEALTH/MANA BAR -----------------------------------------------
+  { PetFrame.manabar, "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+  { PetFrame.healthbar, "UpdateTextString",
+    TextStatusBar_UpdateTextString },
+};-- -------------------------------------------------------------------------
 -- == SECURE FUNCTION HOOKS ==================================================
 FunctionHookData =
 { -- -------------------------------------------------------------------------
@@ -5526,42 +5591,6 @@ FunctionHookData =
     ProcessTextString(oFrame, LPercent, sText);
   end,
 --]]
-  -- -------------------------------------------------------------------------
-  TextStatusBar_UpdateTextString = function(oFrame)
-    -- Return if frame is invalid
-    if not oFrame then return end;
-    -- If frame has a text string
-    local oSubFrame = oFrame.TextString;
-    if oSubFrame then
-      local _, nMax = oFrame:GetMinMaxValues();
-      if nMax <= 0 then
-        if oSubFrame:IsShown() then oSubFrame:Hide() end
-        return;
-      end
-      local nCur = oFrame:GetValue();
-      ProcessTextString(oSubFrame, nCur/nMax*100, OneOrBoth(nCur,nMax));
-    end
-    -- Return if the unit isn't specified or doesn't exist
-    local sUnit = oFrame.unit;
-    if not sUnit or not UnitExists(sUnit) then return end;
-    -- Get frame health bar and return if invalid or a power bar
-    oSubFrame = oFrame.healthbar or oFrame;
-    if not oSubFrame or oSubFrame.powerType or
-      not oSubFrame.SetStatusBarColor then return end;
-    -- Use the default green colour if the unit frame enhancements setting is
-    -- disabled.
-    if not SettingEnabled("unitnpe") then
-      return oSubFrame:SetStatusBarColor(0, 1, 0) end;
-    -- Get the class of the unit and return if there is no class
-    local _, sClass = UnitClass(sUnit);
-    if not sClass then return end;
-    -- Set the health bar to the colour of the class. For some reason, instead
-    -- of Blizzard using gray textures so devs can set any colour the want,
-    -- they decided to use a yellow texture so that limits the colours, so
-    -- we'll have to try and offset that.
-    local aCol = RAID_CLASS_COLORS[sClass];
-    oSubFrame:SetStatusBarColor(aCol.r-0.37, aCol.g-0.75, aCol.b-0.10);
-  end,
   -- --------------------------------------------------------------------------
 --[[ FIXME
   BagSlotButton_OnDrag = function(Self)
@@ -6625,7 +6654,7 @@ StatsSet = function(iTime, sName, iFlags, sTable, sIndex, iAmount, iSkId, bHe)
   if 0 == BAnd(COMBATLOG_OBJECT_AFFILIATION_MINE, iFlags) or
     not bStatsBests then return end;
   -- Get link for spell so player can click on it. Use skill name if nil.
-  local sLink = GetSpellLink(iSkId);
+  local sLink = C_Spell.GetSpellLink(iSkId);
   if not sLink or #sLink == 0 then sLink = sSkill or iSkId end;
   -- Print the new record to chat
   local sType;
@@ -6869,7 +6898,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
   oDialog:SetWidth(iWidth+iBorder*2+22);
   oDialog:RegisterForDrag("RightButton");
   oDialog:SetScript("OnDragStart", function()
-    if GetMouseFocus() == oDialog then oDialog:StartMoving() end;
+    if GetMouseFoci()[1] == oDialog then oDialog:StartMoving() end;
   end);
   oDialog:SetScript("OnDragStop", function()
     oDialog:StopMovingOrSizing();
@@ -7140,7 +7169,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
       CatFrame:ClearAllPoints();
     end
     CatFrame:SetScript("OnMouseUp", function(Self, Button)
-      if GetMouseFocus() ~= Self then return end;
+      if GetMouseFoci()[1] ~= Self then return end;
       if Button == "LeftButton" then
         if Self.Expanded then
           PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
@@ -7230,7 +7259,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
     OptFrame:SetPoint("BOTTOMLEFT", Parent, "BOTTOMLEFT", 0, -19);
     SetTooltip(OptFrame, HoverData);
     OptFrame:SetScript("OnMouseUp", function(Frame, Button)
-      if GetMouseFocus() ~= Frame then return end;
+      if GetMouseFoci()[1] ~= Frame then return end;
       PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON);
       ClickFunc(Frame, Button);
     end);
@@ -7520,7 +7549,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
         local OptNum = 0;
         for iId, Data in pairs(WhoData) do
           iId = iId:sub(1,-2);
-          local sRealName = GetSpellInfo(iId);
+          local sRealName = C_Spell.GetSpellInfo(iId);
           if sRealName then sRealName = "|Hspell:"..iId.."|h"..sRealName.."|h";
           else sRealName = iId end;
           local sDate = date("%d/%m/%y %H:%M", Data[1]);
@@ -7532,8 +7561,9 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
             if Button ~= "RightButton" then return end;
             ShowPasteMenu(Self, function(Self, Method, Target)
               assert(Method, "No method specified");
-              SendChat(Who.."'s best "..GetSpellLink(iId).." of "..iValue..
-                " on "..sWho.." at "..sDate, Method, Target, nil, true);
+              SendChat(Who.."'s best "..C_Spell.GetSpellLink(iId).." of "..
+                iValue.." on "..sWho.." at "..sDate, Method, Target, nil,
+                true);
             end);
           end, NumOpt, Parent, {
             { T=sRealName },
@@ -8608,6 +8638,9 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     foreach(ChatEventsData, ChatFrame_AddMessageEventFilter);
     CreateTimer(1, function()
       foreach(FunctionHookData, hooksecurefunc);
+      for iIndex = 1, #ClassFunctionHookData do
+        hooksecurefunc(unpack(ClassFunctionHookData[iIndex]));
+      end
     end, 1, "HookSecureFunctions");
     for Type, TypeData in pairs(FrameEventHookData) do
       for Name, Function in pairs(TypeData) do
@@ -8623,7 +8656,6 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   function()
     RaidWarningFrame:UnregisterEvent("CHAT_MSG_RAID_WARNING");
     RuneFrame:SetParent(PlayerFrame);
-    LoadAddOn("Blizzard_TalkingHeadUI");
   end,
   -- Bag button enhancements ----------------------------------------------- --
   function()
@@ -9119,7 +9151,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       oIcon:SetTexCoord(.1, .9, .1, .9);
       oIcon:SetVertexColor(1.0, 1.0, 1.0);
       GameTooltip:Hide();
-      if GetMouseFocus() ~= Self then return end;
+      if GetMouseFoci()[1] ~= Self then return end;
       if Button == "LeftButton" then
         if IsAltKeyDown() then --[[ FREE FUNCTION --]]
         elseif IsControlKeyDown() then LocalCommandsData.stsshowp();
@@ -9390,9 +9422,9 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     -- Text count update function
     local function UpdateCount(iSpellId)
       -- Done if no spell id (i.e. no spell/macro assigned to button)
-      if not iSpellId then return end;
+      if type(iSpellId) ~= "number" then return end;
       -- Get spell power cost data, return if no data
-      local aData = GetSpellPowerCost(iSpellId);
+      local aData = C_Spell.GetSpellPowerCost(iSpellId);
       if not aData or #aData == 0 then return end;
       -- This data is formatted in an array so we need to enumerate through it
       -- to try and find a cost and not a return.
@@ -9440,7 +9472,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         if sName then return UpdateCount(sName) end;
       end,
       PetActionButton = function(iIndex)
-        local sName = GetSpellInfo(GetPetActionInfo(iIndex) or sNull);
+        local sName = C_Spell.GetSpellInfo(GetPetActionInfo(iIndex) or sNull);
         if sName then return UpdateCount(sName) end;
       end
     }) do for iIndex = 1, 12 do
@@ -9526,8 +9558,6 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   end,
   -- Chat slash command ---------------------------------------------------- --
   function()
-    local sCmdLower = "mh";              -- Command as lower case and upcase
-    local sCmdUpper = sCmdLower:upper();
     -- Command callback function
     local function OnCommand(sCmdLine)
       -- Check parameter
@@ -9565,15 +9595,14 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       if bEnabled then sMsg = sMsg.."disabled" else sMsg = sMsg.."enabled" end;
       Print(sMsg);
     end
+    -- Set uppercase version of command
+    ConfigData.CommandUpper = ConfigData.Command:upper();
     -- Make a local reference of function for our own use.
     SlashFunc = OnCommand;
-    -- Command as lower case and upper case
-    local sCmdLower = "mh";
-    local sCmdUpper = sCmdLower:upper();
     -- Prepare global variable for command
-    _G["SLASH_"..sCmdUpper.."1"] = "/"..sCmdLower;
+    _G["SLASH_"..ConfigData.CommandUpper.."1"] = "/"..ConfigData.Command;
     -- Assign command to slash command list
-    SlashCmdList[sCmdUpper] = SlashFunc;
+    SlashCmdList[ConfigData.CommandUpper] = SlashFunc;
   end,
   -- Timer system ---------------------------------------------------------- --
   function()
@@ -9854,7 +9883,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
               UnitAura(oSelf.unit, oSelf.buttonInfo.index, oSelf.filter);
             if not sName then return end;
             -- Get spell link from id and use link instead of name if found
-            local sLink = GetSpellLink(iId);
+            local sLink = C_Spell.GetSpellLink(iId);
             if sLink and #sLink > 0 then sName = sLink end;
             -- Start building message and dispatch it
             local sMsg;
