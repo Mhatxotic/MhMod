@@ -5,7 +5,7 @@ local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",
   Author      = "Mhat",
   Major       = 2,
-  Minor       = 3,
+  Minor       = 4,
   Extra       = "" ,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
@@ -2204,7 +2204,7 @@ EventsData =
       -- Total number of battle.net friends
       local iFriendsBN = BNGetNumFriends();
       -- Get number of local friends and add to grand total
-      local iFriendsLocal = 0; -- FIXME GetNumFriends();
+      local iFriendsLocal = C_FriendList.GetNumFriends();
       -- Total number of local and battle.net friends
       local iFriendsTotal = iFriendsBN + iFriendsLocal;
       -- If we're tracking friends?
@@ -2214,9 +2214,15 @@ EventsData =
       -- For each battle.net friend
       for iI = 1, max(iFriendsBN, iFriendsLocal) do
         -- Get info about the local friend and if local friend is online?
-        local sIGName, iLv, sClass, sZone, bOnline, sStatus, sNote, _ =
-          GetFriendInfo(iI);
+        local aData = C_FriendList.GetFriendInfo(iI);
+        local bOnline = aData.connected;
         if bOnline then
+          local sIGName, iLv, sClass, sZone, sNote =
+            aData.name, aData.level, aData.className, aData.area, aData.notes;
+          local sStatus = "ONLINE";
+          if aData.afk then sStatus = sStatus.."+AFK" end;
+          if aData.dnd then sStatus = sStatus.."+DND" end;
+          if aData.mobile then sStatus = sStatus.."+MOBILE" end;
           -- Set name and realm (local friends are always on my server)
           local sNameAndRealm = sIGName.."-"..sMyRealm;
           -- Prepare data
@@ -3950,7 +3956,7 @@ LocalCommandsData = {
       "ignore list!");
   end,
   frlclear = function(_, ArgV, ArgC)
-    local Count = GetNumFriends();
+    local Count = C_FriendList.GetNumFriends();
     if Count <= 0 then
       ShowMsg("Your friends list is empty!");
       return;
@@ -3960,12 +3966,13 @@ LocalCommandsData = {
         "entries will be deleted! Are you sure you want to reset your "..
         "friends list?", "frlclear confirm");
     end
-    for Index = 1, Count do RemoveFriend(GetFriendInfo(Index)) end;
+    for Index = 1, Count do
+      RemoveFriend(C_FriendList.GetFriendInfo(Index).name) end;
     ShowMsg("A total of |cff7f7f7f"..Count..
       "|r friends removed from your friends list!");
   end,
   fnclear = function()
-    local Count = GetNumFriends();
+    local Count = C_FriendList.GetNumFriends();
     if Count <= 0 then
       ShowMsg("Your friends list is empty!");
       return;
@@ -3976,8 +3983,9 @@ LocalCommandsData = {
         "Are you sure you want to clear them?", "fnclear confirm");
     end
     local D = 0;
-    for I=1, GetNumFriends() do
-      local PN, _, _, _, _, _, NO = GetFriendInfo(I);
+    for I=1, C_FriendList.GetNumFriends() do
+      local aData = C_FriendList.GetFriendInfo(iI);
+      local PN, NO = aData.name, aData.notes;
       if PN and NO then
         SetFriendNotes(I, sNull);
         Print(PN.."'s note of "..NO.." was cleared");
@@ -4784,7 +4792,7 @@ LocalCommandsData = {
       ShowMsg("Please specify the addon to toggle", "tgaddon");
     end
     local Addon = ArgV[1];
-    local Name, Title, _, Enabled = GetAddOnInfo(Addon);
+    local Name, Title, _, Enabled = C_AddOns.GetAddOnInfo(Addon);
     if not Name then
       return ShowMsg("The addon |cffaaaaaa"..Addon..
         "|r is not currently loaded!", "tgaddon");
@@ -4798,10 +4806,10 @@ LocalCommandsData = {
         "tgaddon "..Addon.." confirm");
     end
     if Enabled then
-      DisableAddOn(Addon);
+      C_AddOns.DisableAddOn(Addon);
       ShowMsg("The addon |cffaaaaaa"..Addon.."|r has been disabled!");
     else
-      EnableAddOn(Addon);
+      C_AddOns.EnableAddOn(Addon);
       ShowMsg("The addon |cffaaaaaa"..Addon.."|r has been enabled!");
     end
     ReloadUI();
@@ -4834,44 +4842,32 @@ LocalCommandsData = {
     ClearQuests(UnitLevel("player") - GetQuestGreenRange(), false);
   end,
   showqu = function()
-    local iMax, iCount = C_QuestLog.GetNumQuestLogEntries();
-    local sText, iNum, iDone = sNull, 0, 0;
-    for iIndex = 1, iMax do
-      local sTitle, iLevel, iGroup, bHeader, _, bComp, iFreq, iId =
-        C_QuestLog.GetTitleForLogIndex(iIndex);
-      if bHeader then
-        sText = sText.."* In area |cff0000ff"..sTitle.."|r...|n";
-      elseif iLevel > 0 then
-        if bComp then iDone = iDone + 1 end;
-        iNum = iNum + 1;
-        sText = sText..iNum..": "..MakeQuestPrettyName(iIndex).."|n";
-        for iOIndex = 1, GetNumQuestLeaderBoards(iIndex) do
-          local sOName, _, bComp = GetQuestLogLeaderBoard(iOIndex, iIndex);
-          if sOName then
-            local iOCur, iOMax, sODesc =
-              sOName:match("^(%d+)/(%d+)%s+(.+)");
-            if not sODesc then
-              iOCur, sODesc = sOName:match("^(%d+)%s+(.+)") end;
-            if not sODesc then
-              sODesc = sOName;
-            end
-            sText = sText.."+ |cffff00ff"..sODesc.."|r ";
-            if bComp then
-              sText = sText.."|cffffff00(Completed!)|r|n";
-            elseif iOMax then
-              sText = sText.."(|cff7f7f7f"..iOCur.." of "..iOMax..
-                "; "..RoundNumber(iOCur/iOMax*100, 2).."% complete!|r)|n";
-            elseif iOCur then
-              sText = sText.."(|cffffff00"..iOCur..
-                "; Incomplete!|r)|n";
-            else
-              sText = sText.."|cff7f7f7f(Incomplete!|r)|n";
-            end
-          end
+    local iTotal, iDone, sText = 0, 0, sNull;
+    for iQuestId, QuestTable in SortedPairs(QuestData) do
+      iTotal = iTotal + 1;
+      sText = sText..iTotal..": ";
+      local Objectives = QuestTable.O;
+      if Objectives and #Objectives > 0 then
+        sText = sText..GetQuestLink(iQuestId).." ("
+        if QuestTable.C then
+          iDone = iDone + 1;
+          sText = sText.."|cff00ff00Complete|r)...|n";
+        else sText = sText.."|cffff0000Incomplete|r)...|n" end;
+        for Objective, ObjectiveTable in SortedPairs(QuestTable.O) do
+          sText = sText.."  "..Objective..": "..ObjectiveTable.text.." (";
+          if ObjectiveTable.finished then
+            sText = sText.."|cff00ff00Complete|r).|n";
+          else sText = sText.."|cffff0000Incomplete|r).|n" end;
         end
+      else
+        sText = sText..GetQuestLink(iQuestId).." ("
+        if QuestTable.C then
+          sText = sText.."|cff00ff00Complete|r).|n";
+          iDone = iDone + 1;
+        else sText = sText.."|cffff0000Incomplete|r).|n" end;
       end
     end
-    ShowDialog(sText.."|nA total of |cff00ff00"..iCount..
+    ShowDialog(sText.."|nA total of |cff00ff00"..iTotal..
       "|r quests (|cff00ff00"..iDone.."|r completed).",
       "Quest List", "EDITOR");
   end,
@@ -5165,12 +5161,6 @@ LocalCommandsData = {
     RunScript("MhMod.O={"..String.."}");
     DebugTable(MhMod.O, String);
     MhMod.O = nil;
-  end,
-  findglobals = function(sArg)
-    if not sArg or #sArg <= 0 then return end;
-    for sKey in SortedPairs(_G) do
-      if sKey:sub(1, #sArg) == sArg then print(sKey) end;
-    end
   end,
   mo = function()
     local oFocus = GetMouseFoci()[1];
@@ -9177,7 +9167,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
                 value        = { NA=sName, VA=-1 };
               });
               CreateMenuItem({
-                text         = Website;
+                text         = Version.Website;
                 isTitle      = true;
                 notCheckable = true;
               });
@@ -9190,19 +9180,20 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
               notCheckable = true;
             }, 2);
             if UIDROPDOWNMENU_MENU_VALUE.VA == -1 then
-              local AddonCount = GetNumAddOns();
+              local AddonCount = C_AddOns.GetNumAddOns();
               local AddonEnabled, MemoryUsageTotal, MemoryUsage = 0, 0;
               local Name, Title, Checked, Reason;
               UpdateAddOnMemoryUsage();
               local AddonHidden = 0;
               local Deps = { };
               for Index = 1, AddonCount do
-                for _, Dep in pairs({GetAddOnDependencies(Index)}) do
-                  Deps[GetAddOnInfo(Index)] = Index;
+                for _, Dep in pairs({C_AddOns.GetAddOnDependencies(Index)}) do
+                  Deps[C_AddOns.GetAddOnInfo(Index)] = Index;
                 end
               end
               for Index = 1, AddonCount do
-                Name, Title, _, Checked, _, Reason = GetAddOnInfo(Index);
+                Name, Title, _, Checked, _, Reason =
+                  C_AddOns.GetAddOnInfo(Index);
                 MemoryUsage = GetAddOnMemoryUsage(Name);
                 MemoryUsageTotal = MemoryUsageTotal + MemoryUsage;
                 if IsShiftKeyDown() or Enabled or not Deps[Name] then
@@ -9860,19 +9851,21 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
             if sButton ~= "LeftButton" or not IsShiftKeyDown() or
               not SettingEnabled("tsbrprt") then return end;
             -- Get buff info and return if invalid buff
-            local sName, _, iLevels, _, nDuration, nExpire, _, _, _, iId =
-              UnitAura(oSelf.unit, oSelf.buttonInfo.index, oSelf.filter);
-            if not sName then return end;
+            local aData = C_UnitAuras.GetAuraDataByIndex(oSelf.unit,
+              oSelf.buttonInfo.index, oSelf.filter);
+            if not aData then return end;
+            local sName = aData.name;
             -- Get spell link from id and use link instead of name if found
-            local sLink = C_Spell.GetSpellLink(iId);
+            local sLink = C_Spell.GetSpellLink(aData.spellId);
             if sLink and #sLink > 0 then sName = sLink end;
             -- Start building message and dispatch it
             local sMsg;
-            if nDuration > 0 then sMsg = MakeTime(nExpire-GetTime()).." left";
+            if aData.duration > 0 then
+              sMsg = MakeTime(aData.expirationTime - GetTime()).." left";
             else sMsg = "No time limit" end;
             sMsg = sMsg.." on "..sName;
-            if iLevels > 1 then
-              sMsg = sMsg.."x"..BreakUpLargeNumbers(iLevels) end;
+            local iLevels = aData.charges;
+            if iLevels then sMsg = sMsg.."x"..BreakUpLargeNumbers(iLevels) end;
             SendChat("<"..sMsg..">");
           end);
         end
