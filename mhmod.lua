@@ -4,8 +4,7 @@
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",
   Author      = "Mhat",
-  Major       = 2,
-  Minor       = 4,
+  Release     = 8,
   Extra       = "" ,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
@@ -3721,8 +3720,8 @@ LocalCommandsData = {
   quit = Quit,
   advert = function()
     LocalCommandsData.garbcol();
-    SendChat("Using MhMod "..Version.Major.."."..Version.Minor..
-      Version.Extra.." by "..Version.Author.." at "..Version.WebsiteFull);
+    SendChat("Using MhMod v"..Version.Release..Version.Extra.." by "..
+      Version.Author.." at "..Version.WebsiteFull);
   end,
   lfg = function(sWhat)
     -- Show LFG frame
@@ -5609,7 +5608,7 @@ FrameEventHookData = { OnUpdate = {
 }};                                    -- FrameEventHookData
 -- ============================================================================
 GetVersion = function()
-  return format("%u.%u%s", Version.Major, Version.Minor, Version.Extra);
+  return format("%u%s", Version.Release, Version.Extra);
 end
 -- == 'pairs' like function to return sortedpairs ============================
 SortedPairs = function(aData)
@@ -7477,7 +7476,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
         for iId, Data in pairs(WhoData) do
           iId = iId:sub(1,-2);
           local sRealName = C_Spell.GetSpellInfo(iId);
-          if sRealName then sRealName = "|Hspell:"..iId.."|h"..sRealName.."|h";
+          if sRealName then sRealName = "|Hspell:"..iId.."|h"..sRealName.name.."|h";
           else sRealName = iId end;
           local sDate = date("%d/%m/%y %H:%M", Data[1]);
           local iValue = Data[2];
@@ -9134,7 +9133,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
           UIDropDownMenu_Initialize(MhMod, function(Frame, Level)
             if Level == 1 then
               CreateMenuItem({
-                text         = "MhMod/"..GetVersion(),
+                text         = Version.Name.." v"..GetVersion(),
                 isTitle      = true,
                 notCheckable = true
               });
@@ -9879,14 +9878,12 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       Version.WebsiteFull, { r=1, g=0.5, b=1 });
     -- Check if version different
     local sType, sExtra;
-    if not mhconfig.vermajor or
-       not mhconfig.verminor or
+    if not mhconfig.version or
        not mhconfig.verextra then
       sType, sExtra = "installing",
         "Left click on the 'W' button on your mini-map to start "..
         "enabling features or right click on it for commands!";
-    elseif mhconfig.vermajor ~= Version.Major or
-           mhconfig.verminor ~= Version.Minor or
+    elseif mhconfig.version ~= Version.Release or
            mhconfig.verextra ~= Version.Extra then
       sType, sExtra = "upgrading to",
       "New configuration options are marked as |c000000ff<NEW>|r on the "..
@@ -9895,12 +9892,11 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     end
     -- Check for new initialisation
     if sType then
-      ShowMsg("Thanks for "..sType.." |c00ff00ffMhMod "..GetVersion()..
+      ShowMsg("Thanks for "..sType.." |c00ff00ffMhMod v"..GetVersion()..
         "|r! This dialog means that the add-on is successfully "..
         "activated and will not be shown again until you upgrade!|n|n"..
         sExtra);
-      mhconfig.vermajor = Version.Major;
-      mhconfig.verminor = Version.Minor;
+      mhconfig.version = Version.Release;
       mhconfig.verextra = Version.Extra;
     end
   end,
