@@ -4,7 +4,7 @@
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",
   Author      = "Mhat",
-  Release     = 8,
+  Release     = 9,
   Extra       = "" ,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
@@ -1746,86 +1746,119 @@ EventsData =
   end,
   -- The faction log was updated ---------------------------------------------
   UPDATE_FACTION = function()
-    local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
+    local FactionItem = C_Reputation.GetFactionDataByIndex(1);
     local FactionDataNew = { };
-    local FactionHeaderCurrent;
-    local FactionCount, FactionIndex = C_Reputation.GetNumFactions(), 1;
-    local FactionCollapse = { };
-    while FactionIndex <= FactionCount do
-      local FactionData = C_Reputation.GetFactionDataByID(FactionIndex);
-      if FactionData then
-        local FactionName = FactionData.name;
-        if FactionData.isHeader then
-          FactionHeaderCurrent = FactionName;
-          if FactionIsCollapsed then
-            C_Reputation.ExpandFactionHeader(FactionIndex);
-            FactionCount = GetNumFactions();
-            tinsert(FactionCollapse, FactionIndex);
+    if FactionItem then
+      local FactionIndex, FactionHeaderCurrent = 1;
+      repeat
+        local FactionName = FactionItem.name;
+        local FactionID = FactionItem.factionID;
+        if FactionItem.isHeader then FactionHeaderCurrent = FactionName end;
+        local FactionRenownItem =
+          C_MajorFactions.GetMajorFactionRenownInfo(FactionID);
+        if FactionRenownItem then
+          local iLevel = FactionRenownItem.renownLevel;
+          local iUpper = FactionRenownItem.renownLevelThreshold;
+          local iCurrent = FactionRenownItem.renownReputationEarned;
+          local iBottom = (iLevel - 1) * iUpper;
+          local iTotalValue = iBottom + iCurrent;
+          FactionDataNew[FactionName] = {
+            C = FactionHeaderCurrent,
+            CH = iUpper,
+            CV = iCurrent,
+            CP = iCurrent / iUpper * 100,
+            I = FactionIndex,
+            M = true,
+            R = "Renown "..iLevel,
+            TB = iBottom,
+            TH = 62500,
+            TV = iBottom + iTotalValue,
+            TP = iTotalValue / 62500 * 100,
+            U = FactionID,
+          };
+        else
+          local iBottom = FactionItem.currentReactionThreshold;
+          local iCurrent = FactionItem.currentStanding;
+          local iUpper = FactionItem.nextReactionThreshold;
+          local iCurrentValue = iCurrent - iBottom;
+          local iTotalValue = 43000 + iCurrent;
+          local aData = {
+            C  = FactionHeaderCurrent,
+            CH = iUpper - iBottom,
+            CV = iCurrentValue,
+            CP = iCurrentValue / iUpper * 100,
+            I  = FactionIndex,
+            M  = false,
+            R  = FactionRankData[iBottom],
+            TB = 43000 + iBottom,
+            TH = 85000,
+            TV = iTotalValue,
+            TP = iTotalValue / 85000 * 100,
+            U  = FactionID,
+          };
+          local FactionPCurrent, FactionPTop =
+            C_Reputation.GetFactionParagonInfo(FactionID);
+          if FactionPCurrent then
+            aData.PC = FactionPCurrent;
+            aData.PV = FactionPCurrent % FactionPTop;
+            aData.PH = FactionPTop;
+            aData.PP = FactionPCurrent / FactionPTop * 100;
           end
+          FactionDataNew[FactionName] = aData;
         end
-        local FactionID = FactionData.factionID;
-        local FactionPCurrent, FactionPTop =
-          C_Reputation.GetFactionParagonInfo(FactionID);
-        local FactionBottom = FactionData.currentReactionThreshold;
-        FactionDataNew[FactionName] = {
-          B  = FactionBottom,
-          C  = FactionHeaderCurrent,
-          H  = FactionData.nextReactionThreshold,
-          I  = FactionIndex,
-          PH = FactionPTop,
-          PT = FactionPCurrent,
-          R  = FactionRankData[FactionBottom],
-          T  = FactionData.currentStanding,
-          U  = FactionID
-        };
-      end
-      FactionIndex = FactionIndex + 1;
+        FactionIndex = FactionIndex + 1;
+        FactionItem = C_Reputation.GetFactionDataByIndex(FactionIndex);
+      until not FactionItem;
     end
     if not InitsData.Faction then
       InitsData.Faction = true;
       FactionData = FactionDataNew;
       return;
     end
+    -- DebugTable(FactionData);
+    local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
     local Tracking = SettingEnabled("advtrak");
     local AutoTrack = SettingEnabled("autoswr");
     for Faction, FactionTable in pairs(FactionDataNew) do
       local FDATA = FactionData[Faction];
       if FDATA and Tracking and Faction ~= "Guild" then
-        if FactionTable.T ~= FDATA.T then
+        if FactionTable.TV ~= FDATA.TV then
           local Msg, Next, Amount;
-          if FactionTable.T < FDATA.T then
-            Msg = "Lost";
-            Amount = FDATA.T-FactionTable.T;
+          if FactionTable.TV < FDATA.TV then
+            if not FactionTable.M then
+              Msg = "Lost";
+              Amount = FDATA.TV - FactionTable.TV;
+            end
           else
-            Next = FactionTable.H - FactionTable.T;
+            Next = FactionTable.CH - FactionTable.CV;
             Msg = "Received";
-            Amount = FactionTable.T-FDATA.T;
+            Amount = FactionTable.TV - FDATA.TV;
           end
-          Msg = Msg.." "..BreakUpLargeNumbers(Amount).." REP! ("..Faction;
-          if FactionTable.R then Msg = Msg.."; "..FactionTable.R end;
-          if FactionTable.T < 42000 and FactionTable.T > -41000 then
-            Msg = Msg.."; "..
-              BreakUpLargeNumbers(FactionTable.T-FactionTable.B);
-            if Next then
-              Msg = Msg.."; "..RoundNumber((FactionTable.T-FactionTable.B)/
-                (FactionTable.H-FactionTable.B)*100, 2).."%; Next: "..
-                BreakUpLargeNumbers(Next);
-              local Count = Next / Amount;
-              if Count > 0 then
-                Msg = Msg.."; x"..BreakUpLargeNumbers(ceil(Count));
+          if Msg then
+            Msg = Msg.." "..BreakUpLargeNumbers(Amount).." REP! ("..Faction;
+            if FactionTable.R then Msg = Msg.."; "..FactionTable.R end;
+            if FactionTable.TV < FactionTable.TH then
+              Msg = Msg.."; "..BreakUpLargeNumbers(FactionTable.CV);
+              if Next then
+                Msg = Msg.."; "..RoundNumber(FactionTable.CP, 2).."%; Next: "..
+                  BreakUpLargeNumbers(Next);
+                local Count = Next / Amount;
+                if Count > 0 then
+                  Msg = Msg.."; x"..BreakUpLargeNumbers(ceil(Count));
+                end
               end
             end
+            Print(Msg..")", CFCColour);
           end
-          Print(Msg..")", CFCColour);
           if AutoTrack then AutoFactionData[FactionTable.I] = Amount end;
-        elseif FactionTable.PT and FactionTable.PT ~= FDATA.PT then
-          local AmountLevel = FactionTable.PT % FactionTable.PH;
+        elseif FactionTable.PC and FactionTable.PC ~= FDATA.PC then
+          local AmountLevel = FactionTable.PV;
           local Next, Amount =
             FactionTable.PH - AmountLevel,
-            FactionTable.PT - FDATA.PT;
+            FactionTable.PC - FDATA.PC;
           local Msg = "Received "..BreakUpLargeNumbers(Amount)..
             " PTS! ("..Faction.."; "..
-            RoundNumber(AmountLevel/FactionTable.PH*100, 2)..
+            RoundNumber(AmountLevel / FactionTable.PH * 100, 2)..
             "%; Next: "..BreakUpLargeNumbers(Next);
           local Count = Next / Amount;
           if Count > 0 then
@@ -1843,15 +1876,12 @@ EventsData =
           if Value > Highest then HighestId,Highest = Index,Value end;
         end
         if HighestId <= 0 then return end;
-        SetWatchedFactionIndex(HighestId);
+        C_Reputation.SetWatchedFactionByIndex(HighestId);
         nAutoCloseRepBarTime = GetTime() + GetDynSetting("HideRepBarTimeout");
         AutoFactionData = { };
       end, 1, "FactionCalculator");
     end
     FactionData = FactionDataNew;
-    for iI = #FactionCollapse, 1, -1 do
-      CollapseFactionHeader(FactionCollapse[iI]);
-    end
   end,
   -- An auto-complete quest was completed ------------------------------------
   QUEST_AUTOCOMPLETE = function(QuestID)
@@ -9290,30 +9320,26 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
   function()
     -- Reputation bar text was modified
     local function ReputationBarModified(oText)
-      local Data = C_Reputation.GetWatchedFactionData();
-      if not Data then return end;
-      Data = FactionData[Data.name];
-      if not Data then return end;
-      Cur = Cur + 43000;
-      local Percent = Cur/85000*100;
-      local Min, Max = Data.T-Data.B, Data.H-Data.B;
-      local LPercent = Min/Max*100;
-      local sCat = Data.C;
-      if sCat and sCat ~= Name then Name = Name.." of "..sCat end;
-      local Text = Name..": "..OneOrBoth(Cur,85000).." ("..
-        RoundNumber(Percent,2).."%)";
-      if Data.R then Text = Text.."; "..Data.R end;
-      if Percent < 100 then
-        Text = Text..": "..OneOrBoth(Min,Max)..
-          " ("..RoundNumber(LPercent,2).."%)";
+      if not FactionData then return end;
+      local aData = C_Reputation.GetWatchedFactionData();
+      if not aData then return end;
+      local sName = aData.name;
+      local aData = FactionData[sName];
+      if not aData then return end;
+      local sCat = aData.C;
+      if sCat and sCat ~= sName then sName = sName.." of "..sCat end;
+      local sText = sName..": "..OneOrBoth(aData.CV, aData.CH).." ("..
+        RoundNumber(aData.CP, 2).."%)";
+      if aData.R then sText = sText.."; "..aData.R end;
+      if aData.TP < 100 then
+        sText = sText..": "..OneOrBoth(aData.TV, aData.TH)..
+          " ("..RoundNumber(aData.TP, 2).."%)";
       end
-      if Data.PT then
-        Cur = Data.PT % Data.PH;
-        LPercent = Cur/Data.PH*100
-        Text = Text.."; B="..OneOrBoth(Cur, Data.PH)..
-          " ("..RoundNumber(LPercent,2).."%)";
+      if aData.PT then
+        sText = sText.."; B="..OneOrBoth(aData.PV, Data.PH)..
+          " ("..RoundNumber(aData.PP, 2).."%)";
       end
-      ProcessTextString(oText, LPercent, Text);
+      ProcessTextString(oText, aData.CP, sText);
     end
     -- Honour bar text was modified
     local function HonourBarModified(oText)
