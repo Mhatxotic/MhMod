@@ -4,7 +4,7 @@
 local sNull                   = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 16,             Extra = sNull,
+  Release     = 17,             Extra = sNull,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
@@ -201,8 +201,6 @@ local InitsData = {                    -- Inits data structure
   Archaeology                = false;  -- Archaeology initialised?
   Battleground               = false;  -- Battleground data initialised?
   BGScores                   = false;  -- Battleground scores initialised?
-  Currency                   = false;  -- Currency initialised?
-  Faction                    = false;  -- Faction list initialised?
   Friends                    = false;  -- Friends list initialised?
   Guild                      = false;  -- Guild roster initialised (x2)?
   Interface                  = false;  -- Entire user interface initialised?
@@ -1357,19 +1355,24 @@ EventsData = {
   QUEST_LOG_UPDATE = function(...)
     -- Namespace and function aliases
     local nsQL = C_QuestLog;
-    assert(type(nsQL)=="table", "C_QuestLog?");
+    assert(type(nsQL)=="table");
     local funcGNQLE = nsQL.GetNumQuestLogEntries;
-    assert(type(funcGNQLE)=="function", "C_QuestLog.GetNumQuestLogEntries?");
+    assert(type(funcGNQLE)=="function");
     local funcGQIFLI = nsQL.GetQuestIDForLogIndex;
-    assert(type(funcGQIFLI)=="function", "C_QuestLog.GetQuestIDForLogIndex?");
+    assert(type(funcGQIFLI)=="function");
     local funcGQWT = nsQL.GetQuestWatchType;
-    assert(type(funcGQWT)=="function", "C_QuestLog.GetQuestWatchType?");
+    assert(type(funcGQWT)=="function");
     local funcIC = nsQL.IsComplete;
-    assert(type(funcIC)=="function", "C_QuestLog.IsComplete?");
+    assert(type(funcIC)=="function");
     local funcIF = nsQL.IsFailed;
-    assert(type(funcIF)=="function", "C_QuestLog.IsFailed?");
+    assert(type(funcIF)=="function");
     local funcGQO = nsQL.GetQuestObjectives
-    assert(type(funcGQO)=="function", "C_QuestLog.GetQuestObjectives?");
+    assert(type(funcGQO)=="function");
+    -- Automatic quest popup helpers
+    local aAutoQuestPopUpHelpers = {
+      OFFER    = { "autoaaq", ShowQuestOffer    },
+      COMPLETE = { "autoqcm", ShowQuestComplete }
+    };
     -- Override original function
     EventsData.QUEST_LOG_UPDATE = function()
       -- New quest data that will be set
@@ -1456,48 +1459,70 @@ EventsData = {
         local OldQuestData = QuestData[Quest];
         if OldQuestData then
           if QuestTable.F ~= OldQuestData.F then
+            local QuestId = OldQuestData.I;
+            if ProgressReport and (not OnlyWatched or QuestTable.W) then
+              SendChat("<"..MakeQuestPrettyName(QuestId).." was failed!>");
+            end
+            HudMessage(GetQuestLink(QuestId).." was failed!", 1, 0, 0);
             if AutoRemove then
               C_QuestLog.SelectQuestLogEntry(QuestTable.N);
               C_QuestLog.SetAbandonQuest();
               C_QuestLog.AbandonQuest();
             end
-            if ProgressReport and (not OnlyWatched or QuestTable.W) then
-              SendChat("<"..MakeQuestPrettyName(QuestTable.I).." was failed!>");
-            end
-            HudMessage(GetQuestLink(QuestTable.I).." was failed!", 1, 0, 0);
           elseif QuestTable.C ~= OldQuestData.C then
+            local QuestId = OldQuestData.I;
             if ProgressReport and (not OnlyWatched or QuestTable.W) then
-              SendChat("<"..MakeQuestPrettyName(QuestTable.I).." is complete!>");
+              SendChat("<"..MakeQuestPrettyName(QuestId).." is complete!>");
             end
             PlaySound(SOUNDKIT.IG_QUEST_LIST_COMPLETE);
-            HudMessage(GetQuestLink(QuestTable.I).." is complete!", 1, 1, 0);
           end
         end
       end
+      -- Walk through old quests
       for Quest, QuestTable in pairs(QuestData) do
+        -- Get quest in new quest data and if not found?
         local NewQuestData = aNew[Quest];
         if not NewQuestData then
+          -- Then the quest was removed by the server obviously
           Print("<"..MakeQuestPrettyNameId(QuestTable.I)..
             " removed from log>", ChatTypeInfo.SYSTEM);
         end
       end
-      QuestData = aNew;
       -- Any quest popups?
       if GetNumAutoQuestPopUps() > 0 then
         -- Can't accept when dead
-        if UnitIsDeadOrGhost('player') then return end;
-        -- Get auto quest info
-        local iId, iType = GetAutoQuestPopUp(1)
-        if iType == 'OFFER' then
-          if not SettingEnabled("autoaaq") then return end;
-          ShowQuestOffer(iId)
-        elseif iType == 'COMPLETE' then
-          if not SettingEnabled("autoqcm") then return end;
-          ShowQuestComplete(iId)
+        if UnitIsDeadOrGhost("player") then return end;
+        -- Get auto quest info and if there is any?
+        local iId, sType = GetAutoQuestPopUp(1);
+        if iId then
+          -- Popup index and popups that were closed
+          local iPopupIndex, aPopupsClosed = 1, { };
+          -- Process current item
+          repeat
+            -- Get popup helper for type and if found and setting is enabled?
+            local aHelper = aAutoQuestPopUpHelpers[sType];
+            if aHelper and SettingEnabled(aHelper[1]) then
+              -- Call the function and add it for removal
+              aHelper[2](iId);
+              tinsert(aPopupsClosed, iId);
+            end
+            -- See if there are other popups
+            iPopupIndex = iPopupIndex + 1;
+            iId, sType = GetAutoQuestPopUp(iPopupIndex);
+          -- Break if there are no more popups
+          until not iId;
+          -- For each popup processed
+          repeat
+            -- Next popup
+            iPopupIndex = iPopupIndex - 1;
+            -- Remove the popup from screen
+            RemoveAutoQuestPopUp(aPopupsClosed[iPopupIndex]);
+          -- Until the last popup closed
+          until iPopupIndex == 1;
         end
-        -- Done with the popup
-        RemoveAutoQuestPopUp(iId)
       end
+      -- Set new quest data
+      QuestData = aNew;
     end
     -- Call actual function
     return EventsData.QUEST_LOG_UPDATE(...);
@@ -1753,145 +1778,190 @@ EventsData = {
     end
   end,
   -- The faction log was updated ---------------------------------------------
-  UPDATE_FACTION = function()
-    local FactionDataNew = { };
-    local FactionItem = C_Reputation.GetFactionDataByIndex(1);
-    if FactionItem then
-      local FactionIndex, FactionHeaderCurrent = 1;
-      repeat
-        local FactionName = FactionItem.name;
-        local FactionID = FactionItem.factionID;
-        if FactionItem.isHeader then FactionHeaderCurrent = FactionName end;
-        local FactionRenownItem =
-          C_MajorFactions.GetMajorFactionRenownInfo(FactionID);
-        if FactionRenownItem then
-          local iLevel = FactionRenownItem.renownLevel;
-          local iUpper = FactionRenownItem.renownLevelThreshold;
-          local iCurrent = FactionRenownItem.renownReputationEarned;
-          local iBottom = (iLevel - 1) * iUpper;
-          local iTotalValue = iBottom + iCurrent;
-          local nPercent = iCurrent / iUpper * 100;
-          FactionDataNew[FactionName] = {
-            C = FactionHeaderCurrent,
-            CH = iUpper,
-            CV = iCurrent,
-            CP = nPercent,
-            I = FactionIndex,
-            M = true,
-            R = "Renown "..iLevel,
-            TB = iBottom,
-            TH = iUpper,
-            TV = iCurrent,
-            TP = nPercent,
-            U = FactionID,
-          };
-        else
-          local iBottom = FactionItem.currentReactionThreshold;
-          local iCurrent = FactionItem.currentStanding;
-          local iUpper = FactionItem.nextReactionThreshold;
-          local iCurrentValue = iCurrent - iBottom;
-          local iTotalValue = 43000 + iCurrent;
-          local iNext = iUpper - iBottom;
-          local aData = {
-            C  = FactionHeaderCurrent,
-            CH = iNext,
-            CV = iCurrentValue,
-            CP = iCurrentValue / iNext * 100,
-            I  = FactionIndex,
-            M  = false,
-            R  = FactionRankData[iBottom],
-            TB = 43000 + iBottom,
-            TH = 85000,
-            TV = iTotalValue,
-            TP = iTotalValue / 85000 * 100,
-            U  = FactionID,
-          };
-          local FactionPCurrent, FactionPTop =
-            C_Reputation.GetFactionParagonInfo(FactionID);
-          if FactionPCurrent then
-            aData.PC = FactionPCurrent;
-            aData.PV = FactionPCurrent % FactionPTop;
-            aData.PH = FactionPTop;
-            aData.PP = FactionPCurrent / FactionPTop * 100;
-          end
-          FactionDataNew[FactionName] = aData;
-        end
-        FactionIndex = FactionIndex + 1;
-        FactionItem = C_Reputation.GetFactionDataByIndex(FactionIndex);
-      until not FactionItem;
-    end
-    if not InitsData.Faction then
-      InitsData.Faction = true;
-      FactionData = FactionDataNew;
-      return;
-    end
-    -- DebugTable(FactionData);
-    local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
-    local Tracking = SettingEnabled("advtrak");
-    local AutoTrack = SettingEnabled("autoswr");
-    for Faction, FactionTable in pairs(FactionDataNew) do
-      local FDATA = FactionData[Faction];
-      if FDATA and Tracking and Faction ~= "Guild" then
-        if FactionTable.TV ~= FDATA.TV then
-          local Msg, Next, Amount;
-          if FactionTable.TV < FDATA.TV then
-            if not FactionTable.M then
-              Next = FacitonTable.TV - FactionTAble.TB;
-              Msg = "Lost";
-              Amount = FDATA.TV - FactionTable.TV;
+  UPDATE_FACTION = function(...)
+    -- Ignore further updates when expanding headers
+    local FactionIgnoreUpdates = 0;
+    local FactionInitialised = false;
+    -- Get commonly used namespaces and functions
+    local nsR = C_Reputation;
+    assert(type(nsR)=="table");
+    local funcGFDBI = nsR.GetFactionDataByIndex
+    assert(type(funcGFDBI)=="function");
+    local funcEFH = nsR.ExpandFactionHeader;
+    assert(type(funcEFH)=="function");
+    local funcCFH = nsR.CollapseFactionHeader;
+    assert(type(funcCFH)=="function");
+    local funcGFPI = nsR.GetFactionParagonInfo;
+    assert(type(funcGFPI)=="function");
+    local funcSWFBI = nsR.SetWatchedFactionByIndex
+    assert(type(funcSWFBI)=="function");
+    local funcGMFRI = C_MajorFactions.GetMajorFactionRenownInfo;
+    assert(type(funcGMFRI)=="function");
+    -- Set new update faciton event function
+    EventsData.UPDATE_FACTION = function()
+      -- Ignore updates when expanding and collapsing headers
+      if FactionIgnoreUpdates > 0 then
+        FactionIgnoreUpdates = FactionIgnoreUpdates - 1;
+        return;
+      end
+      -- New faction data
+      local FactionDataNew = { };
+      -- Get first faction item and if valid?
+      local FactionItem = funcGFDBI(1);
+      if FactionItem then
+        -- Expanded headers table
+        local FactionCollapsed = { };
+        -- Current faction log id and header
+        local FactionIndex, FactionHeaderCurrent = 1;
+        -- Process faction item
+        repeat
+          local FactionName = FactionItem.name;
+          local FactionID = FactionItem.factionID;
+          if FactionItem.isHeader then
+            FactionHeaderCurrent = FactionName;
+            if not FactionItem.isCollapsed then
+              tinsert(FactionCollapsed, FactionIndex);
+              FactionIgnoreUpdates = FactionIgnoreUpdates + 1;
+              funcEFH(FactionIndex);
             end
+          end
+          local FactionRenownItem = funcGMFRI(FactionID);
+          if FactionRenownItem then
+            local iLevel = FactionRenownItem.renownLevel;
+            local iUpper = FactionRenownItem.renownLevelThreshold;
+            local iCurrent = FactionRenownItem.renownReputationEarned;
+            local iBottom = (iLevel - 1) * iUpper;
+            local iTotalValue = iBottom + iCurrent;
+            local nPercent = iCurrent / iUpper * 100;
+            FactionDataNew[FactionName] = {
+              C = FactionHeaderCurrent,
+              CH = iUpper,
+              CV = iCurrent,
+              CP = nPercent,
+              I = FactionIndex,
+              M = true,
+              R = "Renown "..iLevel,
+              TB = iBottom,
+              TH = iUpper,
+              TV = iCurrent,
+              TP = nPercent,
+              U = FactionID,
+            };
           else
-            Next = FactionTable.CH - FactionTable.CV;
-            Msg = "Received";
-            Amount = FactionTable.TV - FDATA.TV;
-          end
-          if Msg then
-            Msg = Msg.." "..BreakUpLargeNumbers(Amount).." REP! ("..Faction;
-            if FactionTable.R then Msg = Msg.."; "..FactionTable.R end;
-            if FactionTable.TV < FactionTable.TH then
-              Msg = Msg.."; "..BreakUpLargeNumbers(FactionTable.CV);
-              if Next then
-                Msg = Msg.."; "..RoundNumber(FactionTable.CP, 2).."%; Next: "..
-                  BreakUpLargeNumbers(Next);
-                local Count = ceil(Next / Amount);
-                if Count > 0 then
-                  Msg = Msg.."; x"..BreakUpLargeNumbers(Count);
-                end
-              end
+            local iBottom = FactionItem.currentReactionThreshold;
+            local iCurrent = FactionItem.currentStanding;
+            local iUpper = FactionItem.nextReactionThreshold;
+            local iCurrentValue = iCurrent - iBottom;
+            local iTotalValue = 43000 + iCurrent;
+            local iNext = iUpper - iBottom;
+            local aData = {
+              C  = FactionHeaderCurrent,
+              CH = iNext,
+              CV = iCurrentValue,
+              CP = iCurrentValue / iNext * 100,
+              I  = FactionIndex,
+              M  = false,
+              R  = FactionRankData[iBottom],
+              TB = 43000 + iBottom,
+              TH = 85000,
+              TV = iTotalValue,
+              TP = iTotalValue / 85000 * 100,
+              U  = FactionID,
+            };
+            local FactionPCurrent, FactionPTop = funcGFPI(FactionID);
+            if FactionPCurrent then
+              aData.PC = FactionPCurrent;
+              aData.PV = FactionPCurrent % FactionPTop;
+              aData.PH = FactionPTop;
+              aData.PP = FactionPCurrent / FactionPTop * 100;
             end
-            Print(Msg..")", CFCColour);
+            FactionDataNew[FactionName] = aData;
           end
-          if AutoTrack then AutoFactionData[FactionTable.I] = Amount end;
-        elseif FactionTable.PC and FactionTable.PC ~= FDATA.PC then
-          local AmountLevel = FactionTable.PV;
-          local Next, Amount =
-            FactionTable.PH - AmountLevel,
-            FactionTable.PC - FDATA.PC;
-          local Msg = "Received "..BreakUpLargeNumbers(Amount)..
-            " PTS! ("..Faction.."; "..
-            RoundNumber(AmountLevel / FactionTable.PH * 100, 2)..
-            "%; Next: "..BreakUpLargeNumbers(Next);
-          local Count = Next / Amount;
-          if Count > 0 then
-            Msg = Msg.."; x"..BreakUpLargeNumbers(ceil(Count));
-          end
-          Print(Msg..")", CFCColour);
-          if AutoTrack then AutoFactionData[FactionTable.I] = Amount end;
+          FactionIndex = FactionIndex + 1;
+          FactionItem = funcGFDBI(FactionIndex);
+        until not FactionItem;
+        -- For each collapsed faction header
+        for FactionIndex = #FactionCollapsed, 1, -1 do
+          -- Collapsing the header will generate another event so ignore it
+          FactionIgnoreUpdates = FactionIgnoreUpdates + 1;
+          -- Do the collapse
+          funcCFH(FactionIndex);
         end
       end
-    end
-    if AutoTrack then
-      CreateTimer(1, function()
-        local Highest, HighestId = 0, 0;
-        for Index, Value in pairs(AutoFactionData) do
-          if Value > Highest then HighestId,Highest = Index,Value end;
+      if not FactionInitialised then
+        FactionInitialised = true;
+        FactionData = FactionDataNew;
+        return;
+      end
+      local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
+      local Tracking = SettingEnabled("advtrak");
+      local AutoTrack = SettingEnabled("autoswr");
+      for Faction, FactionTable in pairs(FactionDataNew) do
+        local FDATA = FactionData[Faction];
+        if FDATA and Tracking and Faction ~= "Guild" then
+          if FactionTable.TV ~= FDATA.TV then
+            local Msg, Next, Amount;
+            if FactionTable.TV < FDATA.TV then
+              if not FactionTable.M then
+                Next = FacitonTable.TV - FactionTAble.TB;
+                Msg = "Lost";
+                Amount = FDATA.TV - FactionTable.TV;
+              end
+            else
+              Next = FactionTable.CH - FactionTable.CV;
+              Msg = "Received";
+              Amount = FactionTable.TV - FDATA.TV;
+            end
+            if Msg then
+              Msg = Msg.." "..BreakUpLargeNumbers(Amount).." REP! ("..Faction;
+              if FactionTable.R then Msg = Msg.."; "..FactionTable.R end;
+              if FactionTable.TV < FactionTable.TH then
+                Msg = Msg.."; "..BreakUpLargeNumbers(FactionTable.CV);
+                if Next then
+                  Msg = Msg.."; "..RoundNumber(FactionTable.CP, 2).."%; Next: "..
+                    BreakUpLargeNumbers(Next);
+                  local Count = ceil(Next / Amount);
+                  if Count > 0 then
+                    Msg = Msg.."; x"..BreakUpLargeNumbers(Count);
+                  end
+                end
+              end
+              Print(Msg..")", CFCColour);
+            end
+            if AutoTrack then AutoFactionData[FactionTable.I] = Amount end;
+          elseif FactionTable.PC and FactionTable.PC ~= FDATA.PC then
+            local AmountLevel = FactionTable.PV;
+            local Next, Amount =
+              FactionTable.PH - AmountLevel,
+              FactionTable.PC - FDATA.PC;
+            local Msg = "Received "..BreakUpLargeNumbers(Amount)..
+              " PTS! ("..Faction.."; "..
+              RoundNumber(AmountLevel / FactionTable.PH * 100, 2)..
+              "%; Next: "..BreakUpLargeNumbers(Next);
+            local Count = Next / Amount;
+            if Count > 0 then
+              Msg = Msg.."; x"..BreakUpLargeNumbers(ceil(Count));
+            end
+            Print(Msg..")", CFCColour);
+            if AutoTrack then AutoFactionData[FactionTable.I] = Amount end;
+          end
         end
-        if HighestId <= 0 then return end;
-        C_Reputation.SetWatchedFactionByIndex(HighestId);
-        AutoFactionData = { };
-      end, 1, "FactionCalculator");
+      end
+      if AutoTrack then
+        CreateTimer(1, function()
+          local Highest, HighestId = 0, 0;
+          for Index, Value in pairs(AutoFactionData) do
+            if Value > Highest then HighestId,Highest = Index,Value end;
+          end
+          if HighestId <= 0 then return end;
+          funcSWFBI(HighestId);
+          AutoFactionData = { };
+        end, 1, "FactionCalculator");
+      end
+      FactionData = FactionDataNew;
     end
-    FactionData = FactionDataNew;
+    -- Call action function for first time
+    EventsData.UPDATE_FACTION(...);
   end,
   -- An auto-complete quest was completed ------------------------------------
   QUEST_AUTOCOMPLETE = function(QuestID)
@@ -2683,59 +2753,103 @@ EventsData = {
     end
   end,
   -- The players currency counts have changed --------------------------------
-  CURRENCY_DISPLAY_UPDATE = function()
-    -- New currency data
-    local aNCData = { };
-    -- Get number of currencies
-    for iIndex = 1, C_CurrencyInfo.GetCurrencyListSize() do
-      local aData = C_CurrencyInfo.GetCurrencyListInfo(iIndex);
-      if aData then
-        local iCount = aData.quantity;
-        if iCount and iCount > 0 then
-          local sLink = C_CurrencyInfo.GetCurrencyListLink(iIndex)
-          if sLink then aNCData[sLink] = iCount end;
+  CURRENCY_DISPLAY_UPDATE = function(...)
+    -- Variables
+    local CurrencyInitialised = false;
+    -- Tables and functions
+    local nsCI = C_CurrencyInfo;
+    assert(type(nsCI)=="table");
+    local funcGCLI = nsCI.GetCurrencyListInfo;
+    assert(type(funcGCLI)=="function");
+    local funcECL = nsCI.ExpandCurrencyList;
+    assert(type(funcECL)=="function");
+    local funcGCLL = nsCI.GetCurrencyListLink;
+    assert(type(funcGCLL)=="function");
+    -- Actual functions
+    EventsData.CURRENCY_DISPLAY_UPDATE = function()
+      -- New currency data and collapse data as we need tp expand headers
+      local aNCData = { };
+      -- Get first item and if we have it?
+      local CurrencyItem = funcGCLI(1);
+      if CurrencyItem then
+        -- Id's that need to be collapsed
+        local CurrencyCollapse = { };
+        -- Current index and header
+        local CurrencyIndex, CurrencyHeaderCurrent = 1;
+        -- Process current item
+        repeat
+          -- Get currency name
+          local CurrencyName = CurrencyItem.name;
+          -- If it's a header?
+          if CurrencyItem.isHeader then
+            -- Set header name for currency items
+            CurrencyHeaderCurrent = CurrencyName;
+            -- If header is not expanded?
+            if not CurrencyItem.isHeaderExpanded then
+              -- Collapse this header at the end
+              tinsert(CurrencyCollapse, CurrencyIndex);
+              -- Do the expand
+              funcECL(CurrencyIndex, true);
+            end
+          -- It's not a header?
+          else
+            -- Store link and amount
+            local sLink = funcGCLL(CurrencyIndex)
+            if sLink then aNCData[sLink] = CurrencyItem.quantity end;
+          end
+          -- Increment currency id
+          CurrencyIndex = CurrencyIndex + 1;
+          -- Grab next item info
+          CurrencyItem = funcGCLI(CurrencyIndex)
+        -- Break if invalid or loop to process new item
+        until not CurrencyItem;
+        -- Collapse expanded sections
+        for CurrencyIndex = #CurrencyCollapse, 1, -1 do
+          funcECL(CurrencyIndex, false);
         end
       end
-    end
-    -- Values not initialised yet?
-    if not InitsData.Currency then
-      -- OK, this is annoying. When you login to a server, Blizzard can send
-      -- multiple events which can trigger showing changes but not during a
-      -- a /reload so we will need to cancel them out with our timer. One
-      -- second should be enough time to initialise the currency list.
-      return CreateTimer(1, function()
-        InitsData.Currency = true;
-        CurrencyData = aNCData;
-      end, 1, "CI");
-    end
-    -- Reset obsolete items
-    for sLink, iNCount in pairs(CurrencyData) do
-      if not aNCData[sLink] then aNCData[sLink] = 0 end;
-    end
-    -- Check for new or used items
-    for sLink, iNCount in pairs(aNCData) do
-      -- Get old count and if different from new count
-      local iOCount = CurrencyData[sLink] or 0;
-      if iOCount ~= iNCount then
-        -- Get used or recieved
-        local sWhat, iValue;
-        if iNCount < iOCount then
-          sWhat, iValue = "Used", iOCount - iNCount;
-        elseif iNCount > iOCount then
-          sWhat, iValue = "Received", iNCount - iOCount;
-        end
-        -- Only one item?
-        if iValue == 1 then iValue = sNull;
-        -- More than one item?
-        else iValue = "x"..BreakUpLargeNumbers(iValue) end;
-        -- Print message to chat
-        Print(sWhat.." currency "..sLink..iValue.." (Total: "..
-          BreakUpLargeNumbers(iNCount)..")",
-          ChatTypeInfo["CURRENCY"]);
+      -- Values not initialised yet?
+      if not CurrencyInitialised then
+        -- OK, this is annoying. When you login to a server, Blizzard can send
+        -- multiple events which can trigger showing changes but not during a
+        -- a /reload so we will need to cancel them out with our timer. One
+        -- second should be enough time to initialise the currency list.
+        return CreateTimer(1, function()
+          CurrencyInitialised = true;
+          CurrencyData = aNCData;
+        end, 1, "CI");
       end
+      -- Reset obsolete items
+      for sLink, iNCount in pairs(CurrencyData) do
+        if not aNCData[sLink] then aNCData[sLink] = 0 end;
+      end
+      -- Check for new or used items
+      for sLink, iNCount in pairs(aNCData) do
+        -- Get old count and if different from new count
+        local iOCount = CurrencyData[sLink] or 0;
+        if iOCount ~= iNCount then
+          -- Get used or recieved
+          local sWhat, iValue;
+          if iNCount < iOCount then
+            sWhat, iValue = "Used", iOCount - iNCount;
+          elseif iNCount > iOCount then
+            sWhat, iValue = "Received", iNCount - iOCount;
+          end
+          -- Only one item?
+          if iValue == 1 then iValue = sNull;
+          -- More than one item?
+          else iValue = "x"..BreakUpLargeNumbers(iValue) end;
+          -- Print message to chat
+          Print(sWhat.." currency "..sLink..iValue.." (Total: "..
+            BreakUpLargeNumbers(iNCount)..")",
+            ChatTypeInfo["CURRENCY"]);
+        end
+      end
+      -- Store new data
+      CurrencyData = aNCData;
     end
-    -- Store new data
-    CurrencyData = aNCData;
+    -- Run for first time
+    EventsData.CURRENCY_DISPLAY_UPDATE(...);
   end,
   -- Artifact history is ready -----------------------------------------------
 --[[ FIXNE
