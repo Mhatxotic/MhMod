@@ -1,17 +1,17 @@
 -- ============================================================================
 -- MH-MOD                                                 for World of Warcraft
 -- == Version information (do not modify) =====================================
-local sNull                   = "";    -- Null string (const)
+local sEmpty                  = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 17,             Extra = sNull,
+  Release     = 18,             Extra = sEmpty,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
 -- Player data ----------------------------------------------------------------
-local sMyName                 = sNull; -- Current player name
-local sMyRealm                = sNull; -- Current realm name
-local sMyNameRealm            = sNull; -- Current name-realm name
+local sMyName                 = sEmpty; -- Current player name
+local sMyRealm                = sEmpty; -- Current realm name
+local sMyNameRealm            = sEmpty; -- Current name-realm name
 local bAutoClearAFKDisabled   = false; -- Clear AFK was disabled by us
 local nAwayFromKeyboard       = 0;     -- Away from keyboard time (0=not afk)
 local nDoNotDisturb           = 0;     -- Do not disturb time (0=not dnd)
@@ -20,11 +20,10 @@ local nChatLogLastPruned      = 0;     -- Time the chat logs were pruned
 local bInDuel                 = false; -- Currently in duel status
 local iIgnorePartyMessage     = 0;     -- Counter to ignore party message
 local iLastChannelMsgId       = -1;    -- Stop pointless event recursions
-local sLastInstance           = sNull; -- Last instance entered
+local sLastInstance           = sEmpty; -- Last instance entered
 local bLoading                = true;  -- Player on loading screen
 local bLowHealth          = GetTime(); -- Time player was low on health
 local bLowMana            = GetTime(); -- Time player was low on mana
-local iNumBattlegrounds       = 3;     -- Number of battleground queues
 local bPassingOnLoot          = false; -- Addon has set pass-on-loot?
 local iSessionStart          = time(); -- Time the character logged in
 local bTradeDisabled          = false; -- Trade was disabled by this addon
@@ -73,7 +72,6 @@ local MenuEditBoxFrame;                -- Generic menu edit box frame
 local PetManaBarFrames       = { };    -- Party pet mana bar frames
 -- Dynamic storage ------------------------------------------------------------
 local ArchaeologyData        = { };    -- Archaeology data
-local AutoFactionData        = { };    -- Data for calculating rep bar
 local AutoMsgData            = { };    -- DND/AFK message anti-spam data
 local BagData                = { };    -- Bags data
 local BagsData               = { };    -- Individual bags data
@@ -199,7 +197,6 @@ local InitsData = {                    -- Inits data structure
   XP                         = false;  -- Experience initialised?
   Artefact                   = false;  -- Artifact initialised?
   Archaeology                = false;  -- Archaeology initialised?
-  Battleground               = false;  -- Battleground data initialised?
   BGScores                   = false;  -- Battleground scores initialised?
   Friends                    = false;  -- Friends list initialised?
   Guild                      = false;  -- Guild roster initialised (x2)?
@@ -209,38 +206,8 @@ local InitsData = {                    -- Inits data structure
   Quests                     = false;  -- Quest data initialised?
   Raid                       = false;  -- Raid data initialised?
 };
--- Battleground reason change data --------------------------------------------
-local BGChangeReasonsData = {
-  queued = {
-    queued  = "Re-queued for",        confirm = "Now eligable to join",
-    active  = nil,                    none    = "Left the queue for",
-    error   = "Queue error for",
-  }, confirm = {
-    queued  = "Reset the queue for",  confirm = nil,
-    active  = "Joined",               none    = "Declined entry for",
-    error   = "Joining",
-  }, active = {
-    queued  = nil,                    confirm = "Now joined",
-    active  = nil,                    none    = "Leaving",
-    error   = "Error in",
-  }, none = {
-    queued  = "Now in the queue for", confirm = nil,
-    active  = nil,                    none    = nil,
-    error   = "Error in",
-  }, error = {
-    queued  = nil,                    confirm = nil,
-    active  = nil,                    none    = nil,
-    error   = nil,
-  },
-};
 -- Bags to enumerate on bag update event --------------------------------------
 local BagUpdateData = { -2, 0, 1, 2, 3, 4, 5 };
--- Faction rank data ranges ---------------------------------------------------
-local FactionRankData = {
-  [-42000] = "Hated",   [-6000] = "Hostile",  [-3000] = "Unfriendly",
-  [     0] = "Neutral", [ 3000] = "Friendly", [ 9000] = "Honoured",
-  [ 21000] = "Revered", [42000] = "Exalted"
-};
 -- Money data valid values for verifiying database ---------------------------
 local ValidMoneyValues = {
   nIncSec    = 0, nIncMin    = 0, nIncHr     = 0, nIncTotal    = 0,
@@ -255,7 +222,7 @@ local ValidMoneyValues = {
 };
 -- Tooltip unit classification types data -------------------------------------
 local UnitClassificationTypesData = {
-  normal    = { C=0x000000, F=0x00, N=sNull },
+  normal    = { C=0x000000, F=0x00, N=sEmpty },
   elite     = { C=0xFFCC00, F=0x01, N="Elite" },
   worldboss = { C=0xFF2F2F, F=0x11, N="Boss" },
   rare      = { C=0x6666FF, F=0x02, N="Rare" },
@@ -329,8 +296,8 @@ local StatsCatsData = {
 -- Variables and commands list -----------------------------------------------
 local ConfigData = {
   Command = "mh",                      -- Command as lower case
-  CommandUpper = sNull,                -- Filled in at init
-  New = { },                -- New options
+  CommandUpper = sEmpty,               -- Filled in at init
+  New = { },                           -- New options
   Options = {
     ["Battleground"] = {
       autorel = { R=0, SD="Auto-release corpse in battleground",    LD="Automatically release your corpse. Only works in battlegrounds" },
@@ -551,7 +518,7 @@ local ConfigData = {
       togglef =  { SD="Toggle full-screen/window mode",        LD="A quick command to toggle full-screen/window mode" },
     },
   }, Dynamic = {
-    dalfgd = { DF=     sNull,                      SD="Automatic LFG description message",      LD="When this is not empty, the text specified will be automatically entered into the LFG description box and automatically accepted. The setting 'autoall' must be enabled for this to work" },
+    dalfgd = { DF=     sEmpty,                     SD="Automatic LFG description message",      LD="When this is not empty, the text specified will be automatically entered into the LFG description box and automatically accepted. The setting 'autoall' must be enabled for this to work" },
     damet  = { DF=       300, MI=   1, MA=   3600, SD="Timeout limit for AFK msg anti-spam",    LD="Seconds to wait before a DND or AFK auto-reply message is displayed again" },
     darti  = { DF=         1, MI=   1, MA=      8, SD="Default auto-target raid icon",          LD="Changes the icon used for auto-marking. 1=Star, 2=Circle, 3=Diamond, 4=Triangle, 5=Moon, 6=Square, 7=Cross or 8=Skull" },
     dasr   = { DF=         5, MI=   1, MA=     10, SD="Automatic sell rate per update",         LD="Because Blizzard recently started limiting the amount of items you can sell at once using a script, this value allows you to fine tune how many items are sold at once" },
@@ -996,7 +963,7 @@ EventsData = {
     if not SettingEnabled("autoarc") then return end;
     -- Iterate through the role type buttons in the LFD dialog and if they're
     -- checked, add to the message to say that role was set.
-    local sMsg = sNull;
+    local sMsg = sEmpty;
     for sType, aData in pairs({
       TANK    = { LFDRoleCheckPopupRoleButtonTank,   INLINE_TANK_ICON },
       HEALER  = { LFDRoleCheckPopupRoleButtonHealer, INLINE_HEALER_ICON },
@@ -1049,7 +1016,7 @@ EventsData = {
           iBought = iBought + 1;
           -- Build auto-purchase message and echo it out
           local sExtra;
-          if not sSubName or #sSubName <= 0 then sExtra = sNull;
+          if not sSubName or #sSubName <= 0 then sExtra = sEmpty;
           else sExtra = " ("..sSubName..")" end;
           Print("Auto-purchasing '"..sName..sExtra.."' for "..
             MakeMoneyReadable(iCost), ChatTypeInfo.MONEY);
@@ -1059,7 +1026,7 @@ EventsData = {
         else
           -- Add sub name if there is one
           local sExtra;
-          if not sSubName or #sSubName <= 0 then sExtra = sNull;
+          if not sSubName or #sSubName <= 0 then sExtra = sEmpty;
           else sExtra = " ("..sSubName..")" end;
           Print("You cannot afford to purchase '"..sName..sExtra.."' for "..
             MakeMoneyReadable(iCost));
@@ -1461,7 +1428,7 @@ EventsData = {
           if QuestTable.F ~= OldQuestData.F then
             local QuestId = OldQuestData.I;
             if ProgressReport and (not OnlyWatched or QuestTable.W) then
-              SendChat("<"..MakeQuestPrettyName(QuestId).." was failed!>");
+              SendChat("<"..GetQuestLink(QuestId).." was failed!>");
             end
             HudMessage(GetQuestLink(QuestId).." was failed!", 1, 0, 0);
             if AutoRemove then
@@ -1470,9 +1437,8 @@ EventsData = {
               C_QuestLog.AbandonQuest();
             end
           elseif QuestTable.C ~= OldQuestData.C then
-            local QuestId = OldQuestData.I;
             if ProgressReport and (not OnlyWatched or QuestTable.W) then
-              SendChat("<"..MakeQuestPrettyName(QuestId).." is complete!>");
+              SendChat("<"..GetQuestLink(OldQuestData.I).." is complete!>");
             end
             PlaySound(SOUNDKIT.IG_QUEST_LIST_COMPLETE);
           end
@@ -1779,13 +1745,19 @@ EventsData = {
   end,
   -- The faction log was updated ---------------------------------------------
   UPDATE_FACTION = function(...)
+    -- Original faction rank data ranges
+    local aORanks = {
+      [-42000] = "Hated",   [-6000] = "Hostile",  [-3000] = "Unfriendly",
+      [     0] = "Neutral", [ 3000] = "Friendly", [ 9000] = "Honoured",
+      [ 21000] = "Revered", [42000] = "Exalted"
+    };
     -- Ignore further updates when expanding headers
-    local FactionIgnoreUpdates = 0;
-    local FactionInitialised = false;
+    local bInitialised = false;
+    local aAutoSetData = { };
     -- Get commonly used namespaces and functions
     local nsR = C_Reputation;
     assert(type(nsR)=="table");
-    local funcGFDBI = nsR.GetFactionDataByIndex
+    local funcGFDBI = nsR.GetFactionDataByIndex;
     assert(type(funcGFDBI)=="function");
     local funcEFH = nsR.ExpandFactionHeader;
     assert(type(funcEFH)=="function");
@@ -1797,106 +1769,110 @@ EventsData = {
     assert(type(funcSWFBI)=="function");
     local funcGMFRI = C_MajorFactions.GetMajorFactionRenownInfo;
     assert(type(funcGMFRI)=="function");
-    -- Set new update faciton event function
-    EventsData.UPDATE_FACTION = function()
-      -- Ignore updates when expanding and collapsing headers
-      if FactionIgnoreUpdates > 0 then
-        FactionIgnoreUpdates = FactionIgnoreUpdates - 1;
-        return;
-      end
-      -- New faction data
-      local FactionDataNew = { };
+    -- Event updates disabled
+    local function fcbDisabled() end;
+    -- Event updates enabled
+    local function fcbEnabled()
+      -- New faction data and faction headers we expanded
+      local aNew, aExpanded = { }, { };
+      -- Disable further updates until we're done and expanded all headers
+      EventsData.UPDATE_FACTION = fcbDisabled;
       -- Get first faction item and if valid?
-      local FactionItem = funcGFDBI(1);
-      if FactionItem then
-        -- Expanded headers table
-        local FactionCollapsed = { };
+      local aData = funcGFDBI(1);
+      if aData then
         -- Current faction log id and header
-        local FactionIndex, FactionHeaderCurrent = 1;
+        local iIndex, sHeader = 1;
         -- Process faction item
         repeat
-          local FactionName = FactionItem.name;
-          local FactionID = FactionItem.factionID;
-          if FactionItem.isHeader then
-            FactionHeaderCurrent = FactionName;
-            if not FactionItem.isCollapsed then
-              tinsert(FactionCollapsed, FactionIndex);
-              FactionIgnoreUpdates = FactionIgnoreUpdates + 1;
-              funcEFH(FactionIndex);
+          -- Get quest name and unique faction id
+          local sName = aData.name;
+          local iUniqueId = aData.factionID;
+          -- If its a header?
+          if aData.isHeader or aData.isHeaderWithRep then
+            -- Set current header name
+            sHeader = sName;
+            -- If is collapsed header? We can't see the other reputations
+            if aData.isCollapsed then
+              -- Insert into a list to collapse again later
+              tinsert(aExpanded, iIndex);
+              -- Expand it now (ignoring updates)
+              funcEFH(iIndex);
             end
           end
-          local FactionRenownItem = funcGMFRI(FactionID);
-          if FactionRenownItem then
-            local iLevel = FactionRenownItem.renownLevel;
-            local iUpper = FactionRenownItem.renownLevelThreshold;
-            local iCurrent = FactionRenownItem.renownReputationEarned;
+          -- Check if this is a renown faction and if it is?
+          local aRData = funcGMFRI(iUniqueId);
+          if aRData then
+            local iLevel = aRData.renownLevel;
+            local iUpper = aRData.renownLevelThreshold;
+            local iCurrent = aRData.renownReputationEarned;
             local iBottom = (iLevel - 1) * iUpper;
             local iTotalValue = iBottom + iCurrent;
             local nPercent = iCurrent / iUpper * 100;
-            FactionDataNew[FactionName] = {
-              C = FactionHeaderCurrent,
-              CH = iUpper,
-              CV = iCurrent,
-              CP = nPercent,
-              I = FactionIndex,
-              M = true,
-              R = "Renown "..iLevel,
-              TB = iBottom,
-              TH = iUpper,
-              TV = iCurrent,
-              TP = nPercent,
-              U = FactionID,
+            aNew[sName] = {
+              C  = sHeader,            CH = iUpper,
+              CV = iCurrent,           CP = nPercent,
+              I  = iIndex,             M  = true,
+              R  = "Renown "..iLevel,  TB = iBottom,
+              TH = iUpper,             TV = iCurrent,
+              TP = nPercent,           U  = iUniqueId,
             };
+          -- It's not a renown faction?
           else
-            local iBottom = FactionItem.currentReactionThreshold;
-            local iCurrent = FactionItem.currentStanding;
-            local iUpper = FactionItem.nextReactionThreshold;
+            local iBottom = aData.currentReactionThreshold;
+            local iCurrent = aData.currentStanding;
+            local iUpper = aData.nextReactionThreshold;
             local iCurrentValue = iCurrent - iBottom;
             local iTotalValue = 43000 + iCurrent;
             local iNext = iUpper - iBottom;
             local aData = {
-              C  = FactionHeaderCurrent,
-              CH = iNext,
-              CV = iCurrentValue,
-              CP = iCurrentValue / iNext * 100,
-              I  = FactionIndex,
-              M  = false,
-              R  = FactionRankData[iBottom],
-              TB = 43000 + iBottom,
-              TH = 85000,
-              TV = iTotalValue,
+              C  = sHeader,            CH = iNext,
+              CV = iCurrentValue,      CP = iCurrentValue / iNext * 100,
+              I  = iIndex,             M  = false,
+              R  = aORanks[iBottom],   TB = 43000 + iBottom,
+              TH = 85000,              TV = iTotalValue,
               TP = iTotalValue / 85000 * 100,
-              U  = FactionID,
+              U  = iUniqueId,
             };
-            local FactionPCurrent, FactionPTop = funcGFPI(FactionID);
-            if FactionPCurrent then
-              aData.PC = FactionPCurrent;
-              aData.PV = FactionPCurrent % FactionPTop;
-              aData.PH = FactionPTop;
-              aData.PP = FactionPCurrent / FactionPTop * 100;
+            -- Get paragon information and if it's valid?
+            local iPCurrent, iPNext = funcGFPI(iUniqueId);
+            if iPCurrent then
+              -- Set data
+              aData.PC = iPCurrent;
+              aData.PV = iPCurrent % iPNext;
+              aData.PH = iPNext;
+              aData.PP = iPCurrent / iPNext * 100;
             end
-            FactionDataNew[FactionName] = aData;
+            -- Assign data
+            aNew[sName] = aData;
           end
-          FactionIndex = FactionIndex + 1;
-          FactionItem = funcGFDBI(FactionIndex);
-        until not FactionItem;
+          -- Read next item
+          iIndex = iIndex + 1;
+          aData = funcGFDBI(iIndex);
+        -- Break if no more items
+        until not aData;
         -- For each collapsed faction header
-        for FactionIndex = #FactionCollapsed, 1, -1 do
-          -- Collapsing the header will generate another event so ignore it
-          FactionIgnoreUpdates = FactionIgnoreUpdates + 1;
-          -- Do the collapse
-          funcCFH(FactionIndex);
+        while #aExpanded > 0 do
+          -- Do the collapse (ignoring the update)
+          funcCFH(aExpanded[#aExpanded]);
+          -- Remove from list
+          tremove(aExpanded, #aExpanded);
         end
       end
-      if not FactionInitialised then
-        FactionInitialised = true;
-        FactionData = FactionDataNew;
+      -- If we haven't initialised this yet?
+      if not bInitialised then
+        -- Enable updates again
+        EventsData.UPDATE_FACTION = fcbEnabled;
+        -- Set to initialised
+        bInitialised = true;
+        -- Set new data
+        FactionData = aNew;
+        -- We're done
         return;
       end
       local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
       local Tracking = SettingEnabled("advtrak");
       local AutoTrack = SettingEnabled("autoswr");
-      for Faction, FactionTable in pairs(FactionDataNew) do
+      for Faction, FactionTable in pairs(aNew) do
         local FDATA = FactionData[Faction];
         if FDATA and Tracking and Faction ~= "Guild" then
           if FactionTable.TV ~= FDATA.TV then
@@ -1928,7 +1904,7 @@ EventsData = {
               end
               Print(Msg..")", CFCColour);
             end
-            if AutoTrack then AutoFactionData[FactionTable.I] = Amount end;
+            if AutoTrack then aAutoSetData[FactionTable.I] = Amount end;
           elseif FactionTable.PC and FactionTable.PC ~= FDATA.PC then
             local AmountLevel = FactionTable.PV;
             local Next, Amount =
@@ -1943,25 +1919,36 @@ EventsData = {
               Msg = Msg.."; x"..BreakUpLargeNumbers(ceil(Count));
             end
             Print(Msg..")", CFCColour);
-            if AutoTrack then AutoFactionData[FactionTable.I] = Amount end;
+            if AutoTrack then aAutoSetData[FactionTable.I] = Amount end;
           end
         end
       end
+      -- If we have auto track reputation enabled?
       if AutoTrack then
+        -- Because we can get spammed with reputation gains, we'll use a timer
+        -- in which each call of this overwrites the previous timer.
         CreateTimer(1, function()
+          -- Highest found value and id
           local Highest, HighestId = 0, 0;
-          for Index, Value in pairs(AutoFactionData) do
-            if Value > Highest then HighestId,Highest = Index,Value end;
+          -- Find the highest value
+          for Index, Value in pairs(aAutoSetData) do
+            if Value > Highest then HighestId, Highest = Index, Value end;
           end
-          if HighestId <= 0 then return end;
-          funcSWFBI(HighestId);
-          AutoFactionData = { };
+          -- If we got the highest id then set it and clear data
+          if HighestId > 0 then
+            funcSWFBI(HighestId);
+            aAutoSetData = { };
+          end
         end, 1, "FactionCalculator");
       end
-      FactionData = FactionDataNew;
+      -- Set new data
+      FactionData = aNew;
+      -- Enable updates again
+      EventsData.UPDATE_FACTION = fcbEnabled;
     end
-    -- Call action function for first time
-    EventsData.UPDATE_FACTION(...);
+    -- Set real function and call it for the first time
+    EventsData.UPDATE_FACTION = fcbEnabled;
+    fcbEnabled(...);
   end,
   -- An auto-complete quest was completed ------------------------------------
   QUEST_AUTOCOMPLETE = function(QuestID)
@@ -1977,53 +1964,109 @@ EventsData = {
       not IsShiftKeyDown() then GetQuestReward(1) end;
   end,
   -- Status has changed for a battlefield ------------------------------------
-  UPDATE_BATTLEFIELD_STATUS = function()
-    local NewBGData = { C={queued=0,confirm=0,active=0,none=0,error=0},I={},N={} };
-    local NewBGCountersData = NewBGData.C;
-    local NewBGNamesData = NewBGData.N;
-    local BGNamesData = {
-      "Alterac Valley",         "Strand of the Ancients",
-      "Eye of the Storm",       "Arathi Basin",
-      "Warsong Gulch",          "Isle of Conquest",
-      "The Battle for Gilneas", "Twin Peaks",
-      "Wintersgrasp",           "Tol Barad",
-      "Random Battleground"
+  UPDATE_BATTLEFIELD_STATUS = function(...)
+    -- Battleground reason change data
+    local BGChangeReasonsData = {
+      queued = {
+        queued  = "Re-queued for",        confirm = "Now eligable to join",
+        active  = nil,                    none    = "Left the queue for",
+        error   = "Queue error for",
+      }, confirm = {
+        queued  = "Reset the queue for",  confirm = nil,
+        active  = "Joined",               none    = "Declined entry for",
+        error   = "Joining",
+      }, active = {
+        queued  = nil,                    confirm = "Now joined",
+        active  = nil,                    none    = "Leaving",
+        error   = "Error in",
+      }, none = {
+        queued  = "Now in the queue for", confirm = nil,
+        active  = nil,                    none    = nil,
+        error   = "Error in",
+      }, error = {
+        queued  = nil,                    confirm = nil,
+        active  = nil,                    none    = nil,
+        error   = nil,
+      },
     };
-    for _, Name in pairs(BGNamesData) do
-      NewBGNamesData[Name] = {I=nil,S="none",M=Name,N=0,W=nil};
-    end
-    local NewBGIndexesData = NewBGData.I;
-    if not InitsData.Battleground then
-      InitsData.Battleground = true;
-      BGData = NewBGData;
-      return;
-    end;
-    for Index = 1, iNumBattlegrounds do
-      local State, Map = GetBattlefieldStatus(Index);
-      local Data = {
-        I = Index, S = State, M = Map or "UNKNOWN",
-        W = GetBattlefieldEstimatedWaitTime(Index)
-      };
-      if Map and State~="none" then NewBGNamesData[Map] = Data end;
-      NewBGIndexesData[Index] = Data;
-      NewBGCountersData[State] = NewBGCountersData[State] + 1;
-    end
-    if NewBGCountersData.active > 0 then RequestBattlefieldScoreData() end;
-    local Report = SettingEnabled("bgreprt");
-    local OldBGCountersData = BGData.C;
-    local OldBGNamesData = BGData.N;
-    local OldBGIndexesData = BGData.I;
-    for BGName, BattlegroundData in pairs(NewBGNamesData) do
-      local Data = OldBGNamesData[BGName];
-      assert(Data, "Internal Error: No data for '"..BGName.."'!");
-      State = BGChangeReasonsData[Data.S];
-      assert(State, "Internal Error: No reason data for '"..Data.S.."'!");
-      State = State[BattlegroundData.S];
-      if State and Report and BattlegroundData.S ~= Data.S then
-        SendChat("<"..State.." "..BattlegroundData.M..">");
+    -- Battleground names
+    local aNames = {
+      "Alterac Valley",                "Arathi Basin",
+      "Arena Skirmish",                "Ashran",
+      "Battle for Wintergrasp",        "Brawl: Packed House",
+      "Deepwind Gorge",                "Eye of the Storm",
+      "Isle of Conquest",              "Random Battleground",
+      "Random Epic Battleground",      "Seething Shore",
+      "Silvershard Mines",             "Strand of the Ancients",
+      "Temple of Kotmogu",             "The Battle for Gilneas",
+      "Tol Barad",                     "Twin Peaks",
+      "Warsong Gulch",                 "Wintersgrasp"
+    };
+    -- Number of battleground queues allowed
+    local iNumBattlegrounds = 3;
+    -- Battleground is initialised
+    local bInitialised = false;
+    -- Real function
+    EventsData.UPDATE_BATTLEFIELD_STATUS = function()
+      -- Status counters data
+      local aCData = { queued=0, confirm=0, active=0, none=0, error=0 };
+      -- Names data
+      local aNData = { };
+      -- Indexes data
+      local aIData = { };
+      -- New battleground data
+      local aNew = { C = aCData, I = aIData, N = aNData };
+      -- Build names list
+      for iIndex = 1, #aNames do
+        local sName = aNames[iIndex];
+        aNData[sName] = { I=nil, S="none", M=sName, N=0, W=nil };
       end
+      -- If this is the first initialisation?
+      if not bInitialised then
+        -- Set initialised
+        bInitialised = true;
+        -- Set new data
+        BGData = aNew;
+        -- Done
+        return;
+      end
+      -- Enumerate through
+      for iIndex = 1, iNumBattlegrounds do
+        -- Get battlefield queue status
+        local sState, sMap = GetBattlefieldStatus(iIndex);
+        -- Build data for battleground
+        local aData = {
+          I = iIndex, S = sState, M = sMap or "UNKNOWN",
+          W = GetBattlefieldEstimatedWaitTime(iIndex)
+        };
+        -- Set data in named index if valid
+        if sMap and sState~="none" then aNData[sMap] = aData end;
+        -- Set data as indexed table
+        aIData[iIndex] = aData;
+        -- Increase counter count
+        aCData[sState] = aCData[sState] + 1;
+      end
+      -- If we're in a battleground request the current score data
+      if aCData.active > 0 then RequestBattlefieldScoreData() end;
+      local Report = SettingEnabled("bgreprt");
+      local OldBGCountersData = BGData.C;
+      local OldBGNamesData = BGData.N;
+      local OldBGIndexesData = BGData.I;
+      for BGName, BattlegroundData in pairs(aNData) do
+        local Data = OldBGNamesData[BGName];
+        assert(Data, "Internal Error: No data for '"..BGName.."'!");
+        sState = BGChangeReasonsData[Data.S];
+        assert(sState, "Internal Error: No reason data for '"..Data.S.."'!");
+        sState = sState[BattlegroundData.S];
+        if sState and Report and BattlegroundData.S ~= Data.S then
+          SendChat("<"..sState.." "..BattlegroundData.M..">");
+        end
+      end
+      -- Set new data
+      BGData = aNew;
     end
-    BGData = NewBGData;
+    -- Call actual function for first time
+    EventsData.UPDATE_BATTLEFIELD_STATUS(...);
   end,
   -- Scoreboard changed in the battleground ----------------------------------
   UPDATE_BATTLEFIELD_SCORE = function()
@@ -2047,10 +2090,10 @@ EventsData = {
     local RanksData = NewBGScoresData.R;
     local HordeData = NewBGScoresData.H;
     local AllianceData = NewBGScoresData.A;
-    for Index = 1, NewBGScoresData.C do
+    for iIndex = 1, NewBGScoresData.C do
       local Name, KillingBlows, HonorKills, KOs, HonorGained, Faction, Rank,
         Race, Class, Filename, DamageDone, HealingDone =
-          GetBattlefieldScore(Index);
+          GetBattlefieldScore(iIndex);
       if Name then
         ScoreData = {
           KB = KillingBlows, HK = HonorKills, DE = KOs,       HG = HonorGained,
@@ -2386,7 +2429,10 @@ EventsData = {
             tinsert(aNData, aData);
             -- Set note if we're tracking data and the player has not set a
             -- note for them already and user is online?
-            if bTrack and (#sNote == 0 or sNote:sub(1, 1) == "<") then
+            if bTrack and sZone and
+               (not sNote or
+                #sNote == 0 or
+                sNote:sub(1, 1) == "<") then
               -- Set new message
               local sNew = "<Last seen @ "..sTime.." on "..sNameAndRealm.." "..
                 "(Lv."..iLv.." "..sClass..") in "..sZone..">";
@@ -2836,7 +2882,7 @@ EventsData = {
             sWhat, iValue = "Received", iNCount - iOCount;
           end
           -- Only one item?
-          if iValue == 1 then iValue = sNull;
+          if iValue == 1 then iValue = sEmpty;
           -- More than one item?
           else iValue = "x"..BreakUpLargeNumbers(iValue) end;
           -- Print message to chat
@@ -2879,7 +2925,7 @@ EventsData = {
           What, Value = "Received", ItemCount - Count;
         end
         if Value > 0 then
-          if Value == 1 then Value = sNull;
+          if Value == 1 then Value = sEmpty;
           else Value = "x"..BreakUpLargeNumbers(Value) end
           local Name, _, _, _, Extra = GetArchaeologyRaceInfo(ItemId);
           local sMsg = What.." ".."artefact |Hspell:80451|h|cffffafff["..Name..
@@ -3117,7 +3163,7 @@ EventsData = {
     end
     local NewMail = { GetLatestThreeSenders() };
     for Id, Sender in pairs(NewMail) do
-      if Sender == sNull then
+      if Sender == sEmpty then
         Sender = "<Unknown>";
         NewMail[Id] = Sender;
       end
@@ -3256,7 +3302,7 @@ UnitEventsData = {
           if nAwayFromKeyboard == 0 then return true end;
           local Duration = GetTime()-nAwayFromKeyboard;
           local AnimId = floor(Duration%5);
-          local LeftIndicator, RightIndicator = sNull, sNull;
+          local LeftIndicator, RightIndicator = sEmpty, sEmpty;
           for Index = 1, AnimId do LeftIndicator, RightIndicator =
             LeftIndicator.."<", RightIndicator..">" end;
           local ManaBar =
@@ -3346,7 +3392,7 @@ local ChatEventsData =                 -- Chat event hooks
     -- Play whisper sound
     PlaySound(SOUNDKIT.TELL_MESSAGE);
     -- Whisper is allowed
-    return MakePrettyName("BN_WHISPER", Msg, User, "B.Net", sNull, "BN",
+    return MakePrettyName("BN_WHISPER", Msg, User, "B.Net", sEmpty, "BN",
       MsgId);
   end,
   -- Battlenet whisper sent ---------------------------------------------------
@@ -3357,7 +3403,7 @@ local ChatEventsData =                 -- Chat event hooks
       iBNWhisperReplySent = max(0, iBNWhisperReplySent - 1);
       return 1;
     end
-    return MakePrettyName("BN_WHISPER_INFORM", Msg, User, "B.Net", sNull, "BN",
+    return MakePrettyName("BN_WHISPER_INFORM", Msg, User, "B.Net", sEmpty, "BN",
       MsgId);
   end,
   -- -- Whisper sent to me ---------------------------------------------------
@@ -3405,7 +3451,7 @@ local ChatEventsData =                 -- Chat event hooks
       if time() < ThrottleData then return 1 end;
       CommandThrottleData[User] = time() + 1;
       local Command = Msg:match("^%!(%w+)");
-      if not Command or Command == sNull then
+      if not Command or Command == sEmpty then
         Print("An invalid command syntax from "..MakePlayerLink(User, MsgId)..
           " was ignored", Colour);
         SendWhisper(User, "Please specify the command name");
@@ -3415,7 +3461,7 @@ local ChatEventsData =                 -- Chat event hooks
         SendWhisper(User, "The command '"..Command.."' is invalid");
       else
         local sDCmds =
-          (GetDynSetting("dpcd") or sNull):lower();
+          (GetDynSetting("dpcd") or sEmpty):lower();
         if #sDCmds > 0 and sDCmds ~= "none" then
           for _, sDCmd in pairs({ strsplit(" ", sDCmds) }) do
             if sDCmd == Command then
@@ -3592,7 +3638,7 @@ local ChatEventsData =                 -- Chat event hooks
   CHAT_MSG_TEXT_EMOTE = function(_, _, Msg, User, Lang, Chan, _, Flag, _, _, _,
       _, MsgId, _)
     if not UserIsExempt(User) and IsFlooding(User) then return 1 end;
-    return MakePrettyName("TEXT_EMOTE", Msg, sNull, Lang, Chan, "EM", MsgId);
+    return MakePrettyName("TEXT_EMOTE", Msg, sEmpty, Lang, Chan, "EM", MsgId);
   end,
   -- -- Custom message emote received from a nearby player -------------------
   CHAT_MSG_EMOTE = function(_, _, Msg, User, Lang, Chan, _, Flag, _, _, _, _,
@@ -3685,13 +3731,13 @@ local ChatEventsData =                 -- Chat event hooks
   CHAT_MSG_ACHIEVEMENT = function(_, _, Msg, User)
     if SettingEnabled("smartfi") and not UserIsExempt(User) then return 1 end;
     return MakePrettyName("ACHIEVEMENT", format(Msg, MakePlayerLink(User)),
-      sNull, sNull, sNull, sNull, sNull, 0);
+      sEmpty, sEmpty, sEmpty, sEmpty, sEmpty, 0);
   end,
   -- -- Guild achievement message received -----------------------------------
   CHAT_MSG_GUILD_ACHIEVEMENT = function(_, _, Msg, User)
     if SettingEnabled("smartfi") and not UserIsExempt(User) then return 1 end;
     return MakePrettyName("GUILD_ACHIEVEMENT",
-      format(Msg, MakePlayerLink(User)), sNull, sNull, sNull, sNull, sNull, 0);
+      format(Msg, MakePlayerLink(User)), sEmpty, sEmpty, sEmpty, sEmpty, sEmpty, 0);
   end,
   -- -- System message received ----------------------------------------------
   CHAT_MSG_SYSTEM = function(_, _, Msg)
@@ -3715,7 +3761,7 @@ local ChatEventsData =                 -- Chat event hooks
           if Item then
             local _, sLink = GetItemInfo(Item);
             if sLink then
-              Print(format(sMatch:gsub("%%", sNull):gsub("%.%+", "%%s"),
+              Print(format(sMatch:gsub("%%", sEmpty):gsub("%.%+", "%%s"),
                 sLink), aCTISystem);
               return 1;
             end
@@ -3793,7 +3839,8 @@ local ChatEventsData =                 -- Chat event hooks
     if SettingEnabled("trackfr") and Msg:find("^.+ has %w+ o.+line%.") then
       TriggerTimer("FART");
     end
-    return MakePrettyName("SYSTEM", Msg, sNull, sNull, sNull, sNull, sNull, 0);
+    return MakePrettyName("SYSTEM", Msg, sEmpty, sEmpty, sEmpty, sEmpty,
+      sEmpty, 0);
   end
 };-- -- End of chat events ---------------------------------------------------
 -- == Debug a table ==========================================================
@@ -3817,7 +3864,7 @@ DebugTable = function(TableName, String)
   local LinePacks = { };
   local Tables = { };
   local function FinishPack()
-    tinsert(LinePacks, strjoin(sNull, unpack(Lines)));
+    tinsert(LinePacks, strjoin(sEmpty, unpack(Lines)));
     Lines = { };
   end
   local function AddLine(sLine)
@@ -3836,7 +3883,7 @@ DebugTable = function(TableName, String)
     for Key, Value in pairs(TableName) do
       Index = Index + 1;
       AddLine(format("|n|cff%02xff%02x%"..(Level*2).."s%u: %s = %s|r",
-        Colour, Colour, sNull, Index, tostring(Key), tostring(Value)));
+        Colour, Colour, sEmpty, Index, tostring(Key), tostring(Value)));
       if type(Value) == "table" then
         local AlreadyEnumerated = false;
         for iI = 1, #Tables do
@@ -3855,11 +3902,11 @@ DebugTable = function(TableName, String)
       end
     end
     AddLine(format("|n|cff%02xff%02x%"..(Level*2)..
-      "sA total of %u items in this table.|r", Colour, Colour, sNull, Index));
+      "sA total of %u items in this table.|r", Colour, Colour, sEmpty, Index));
   end
   InternalShowTable(TableName, 0, MaxLevel or 10);
   FinishPack();
-  local sLines = sNull;
+  local sLines = sEmpty;
   for iI = 1, #LinePacks do
     sLines = sLines..LinePacks[iI];
   end
@@ -3983,7 +4030,7 @@ LocalCommandsData = {
     local Variable = GetDynSetting("ddfn");
     if ArgC > 0 then Variable = ArgV[1] end;
     local Body = mhnotes[Variable];
-    ShowDialog(Body or sNull, Variable, "EDITOR", function(Text, Var)
+    ShowDialog(Body or sEmpty, Variable, "EDITOR", function(Text, Var)
       if #Text > 0 then mhnotes[Var] = Text;
                    else mhnotes[Var] = nil end;
     end);
@@ -4128,7 +4175,7 @@ LocalCommandsData = {
       if aData then
         local sName, sNote = aData.name, aData.notes;
         if sName and sNote and #sNote > 0 then
-          C_FriendList.SetFriendNotes(iFriendIndex, sNull);
+          C_FriendList.SetFriendNotes(iFriendIndex, sEmpty);
           iDone = iDone + 1;
         end
       end
@@ -4336,7 +4383,7 @@ LocalCommandsData = {
         if HealthBar then
           local HealthBarText = HealthBar.TextString;
           if HealthBarText then
-            HealthBarText:SetFont("fonts\\frizqt__.ttf", 10, sNull);
+            HealthBarText:SetFont("fonts\\frizqt__.ttf", 10, sEmpty);
             HealthBarText:SetShadowColor(0, 0, 0);
             HealthBarText:SetShadowOffset(1, -1);
             HealthBar:UpdateTextString();
@@ -4347,7 +4394,7 @@ LocalCommandsData = {
         if ManaBar then
           local ManaBarText = ManaBar.TextString;
           if ManaBarText then
-            ManaBarText:SetFont("fonts\\frizqt__.ttf", 10, sNull);
+            ManaBarText:SetFont("fonts\\frizqt__.ttf", 10, sEmpty);
             ManaBarText:SetShadowColor(0, 0, 0);
             ManaBarText:SetShadowOffset(1, -1);
             ManaBar:UpdateTextString();
@@ -4406,10 +4453,10 @@ LocalCommandsData = {
             if not Prefix and not Type then return end;
             Id = Type:match("(%d).*");
             if Id and Type then Type = Type:match("%d(.*)")
-            else Id = sNull end;
-            Unit = Prefix:gsub("Member", sNull)..Id;
+            else Id = sEmpty end;
+            Unit = Prefix:gsub("Member", sEmpty)..Id;
           else
-            Unit = Prefix:gsub("Member", sNull).."pet"..Id;
+            Unit = Prefix:gsub("Member", sEmpty).."pet"..Id;
             Prefix = Prefix.."Pet";
           end
           local Current, Maximum;
@@ -4444,7 +4491,7 @@ LocalCommandsData = {
           SendChat("<"..Msg..">");
         else
           local Prefix, Extra = Self:GetName():match("(.*)Frame(.*)");
-          local Unit = Prefix:gsub("Member", sNull);
+          local Unit = Prefix:gsub("Member", sEmpty);
           local Id = Extra:match("(%d).*");
           if Id then
             if Extra:find("PetFrame") then
@@ -4743,7 +4790,7 @@ LocalCommandsData = {
     ShowDialog("Chat log data for |cffaaaaaa"..Category..
       "|r,\nFrom |cffaaaaaa"..date("%d/%m/%y-%H:%M:%S", Start)..
       "|r to |cffaaaaaa"..date("%d/%m/%y-%H:%M:%S", Start+Duration)..
-      "|r...\n\n"..strjoin(sNull, unpack(aLines)).."\nMatched |cffaaaaaa"..
+      "|r...\n\n"..strjoin(sEmpty, unpack(aLines)).."\nMatched |cffaaaaaa"..
       BreakUpLargeNumbers(#aLines).."|r of |cffaaaaaa"..
       BreakUpLargeNumbers(Total).."|r lines of text.",
       "Chat log for "..Category, "EDITOR");
@@ -4788,7 +4835,7 @@ LocalCommandsData = {
     end
     ShowInput("Result: |cffff4f00"..Formatted:gsub("%%", "%"):
       gsub("([-%d%.]+)", "|cffffff00%1|r|cffff4f00")..
-        "|r = |cff0000ff"..Result.."|r!", "calc", Formatted:gsub(" ", sNull));
+        "|r = |cff0000ff"..Result.."|r!", "calc", Formatted:gsub(" ", sEmpty));
   end,
   trackadd = function(Arguments, ArgV, ArgC)
     if ArgC < 1 then
@@ -4899,7 +4946,7 @@ LocalCommandsData = {
     for NUL, Name in ipairs(Names) do
       if IsValidPlayerName(Name) then
         SendChatMessage(Message, "WHISPER", nil, Name);
-      elseif Name ~= sNull then
+      elseif Name ~= sEmpty then
         Print("The player name '"..Name.."' is invalid!");
       end
     end
@@ -5028,7 +5075,7 @@ LocalCommandsData = {
     ShowMsg("A total of |cff7f7f7f"..iDumped.."|r quests were abandoned!");
   end,
   showqu = function()
-    local iTotal, iDone, sText = 0, 0, sNull;
+    local iTotal, iDone, sText = 0, 0, sEmpty;
     for iQuestId, QuestTable in SortedPairs(QuestData) do
       iTotal = iTotal + 1;
       sText = sText..iTotal..": ";
@@ -5055,7 +5102,7 @@ LocalCommandsData = {
       "Quest List", "EDITOR");
   end,
   showinv = function()
-    local Text, Items, Link, Level, SubType, EquipLoc = sNull, 0;
+    local Text, Items, Link, Level, SubType, EquipLoc = sEmpty, 0;
     for SlotId = 1, 23 do
       Link = GetInventoryItemLink("player", SlotId);
       if Link then
@@ -5069,7 +5116,7 @@ LocalCommandsData = {
       "Equipment List", "EDITOR");
   end,
   showitem = function()
-    local iStacks, iItems, sText = 0, 0, sNull;
+    local iStacks, iItems, sText = 0, 0, sEmpty;
     for iBagId = 0, NUM_BAG_FRAMES do
       local aBag = BagsData[iBagId];
       if aBag then
@@ -5104,9 +5151,9 @@ LocalCommandsData = {
       return ShowMsg("The specified item |cffaaaaaa"..Item..
         "|r was not matched!");
     end
-    if not sType or sType == sNull then sType = "N/A" end;
-    if not sSubType or sSubType == sNull then sSubType = "N/A" end;
-    if not sEquipLoc or sEquipLoc == sNull then sEquipLoc = "N/A"  end;
+    if not sType or sType == sEmpty then sType = "N/A" end;
+    if not sSubType or sSubType == sEmpty then sSubType = "N/A" end;
+    if not sEquipLoc or sEquipLoc == sEmpty then sEquipLoc = "N/A"  end;
     local ItemId = tonumber(sLink:match("%|Hitem%:(%d+)%:"));
     local R, G, B = GetItemQualityColor(iRarity);
     local Count = BagData[ItemId];
@@ -5373,13 +5420,13 @@ RemoteCommandsData = {
     if IsWindowsClient() then Type = Type.."Windows";
     elseif IsMacClient() then Type = Type.."Macintosh";
     elseif IsLinuxClient() then Type = Type.."Linux";
-    else Type = sNull end;
+    else Type = sEmpty end;
     SendWhisper(User, GetVersion()..Type);
   end,
   ilvl = function(User)
     Print(MakePlayerLink(User).." requested item level information");
     local Overall, Equipped = GetAverageItemLevel();
-    local Extra = sNull;
+    local Extra = sEmpty;
     if Overall > Equipped then
       Extra = " ("..floor(Overall).." available)";
     end
@@ -5442,7 +5489,7 @@ RemoteCommandsData = {
   bgstatus = function(User)
     Print(MakePlayerLink(User).." requested battleground status");
     local found = 0;
-    for i=1, iNumBattlegrounds do
+    for i=1, #BGData.I do
       local state, map, id = GetBattlefieldStatus(i);
       if state == "active" then
         local _, _, ascore = GetWorldStateUIInfo(1);
@@ -5465,7 +5512,7 @@ RemoteCommandsData = {
         break;
       end
     end
-    for i=1, iNumBattlegrounds do
+    for i=1, #BGData.I do
       local state, map, id = GetBattlefieldStatus(i);
       local estwait = ceil(GetBattlefieldEstimatedWaitTime(i) / 1000);
       local wait = ceil(GetBattlefieldTimeWaited(i) / 1000);
@@ -5714,7 +5761,7 @@ FunctionHookData = {
     if not SettingEnabled("autoall") then return end;
     -- Set the description
     Frame.Description.EditBox:
-      SetText(GetDynSetting("dalfgd") or sNull);
+      SetText(GetDynSetting("dalfgd") or sEmpty);
     -- Do not auto-accept if shift held
     if IsShiftKeyDown() then return end;
     -- Click the button
@@ -5774,7 +5821,7 @@ SortedPairs = function(aData, fcbFunc)
   end
 end
 -- == Template for group data ================================================
-CreateBlankGroupArray = function() return { N={}, U={}, P={}, I={}, L=sNull,
+CreateBlankGroupArray = function() return { N={}, U={}, P={}, I={}, L=sEmpty,
   C=0, G={ [1]={},[2]={},[3]={},[4]={},[5]={},[6]={},[7]={},[8]={} } } end;
 -- == Return all information about the current party or raid =================
 GetGroupData = function()
@@ -5905,7 +5952,7 @@ IsSpam = function(...)
     -- Ignore if spam checking not enabled
     if not SettingEnabled("blocksp") then return false end;
     -- Remove links and convert to lower case
-    sText = sText:gsub("|[HT].+|[ht]", sNull):lower();
+    sText = sText:gsub("|[HT].+|[ht]", sEmpty):lower();
     -- For each spam pattern, check it against the string and return if found
     for iI = 1, #SpamPatterns do
       if sText:find(SpamPatterns[iI]) then return true end;
@@ -6075,13 +6122,13 @@ Print = function(sText, aColour)
         if Name then
           Print(format("|cff%02xff%02x%"..
             (Level*2).."s%s (|cffffff00"..Name.."|r)...",
-              Colour, Colour, sNull, tostring(sText), tostring(Name)));
+              Colour, Colour, sEmpty, tostring(sText), tostring(Name)));
         end
       end
       for Key, Value in pairs(sText) do
         Index = Index + 1;
         Print(format("|cff%02xff%02x%"..(Level*2).."s%u: %s = %s|r",
-          Colour, Colour, sNull, Index, tostring(Key), tostring(Value)));
+          Colour, Colour, sEmpty, Index, tostring(Key), tostring(Value)));
         if type(Value) == "table" then
           local AlreadyEnumerated = false;
           for iI = 1, #Tables do
@@ -6101,7 +6148,7 @@ Print = function(sText, aColour)
       end
       Print(format("|cff%02xff%02x%"..(Level*2)..
         "sA total of %u items in this table.|r",
-          Colour, Colour, sNull, Index));
+          Colour, Colour, sEmpty, Index));
     end
     -- Do the enumeration and return
     return InternalShowTable(sText, 0, MaxLevel or 10);
@@ -6324,7 +6371,7 @@ ShowInput = function(Text, Function, Current, Extra)
     if ParentName == "UIParent" then Self = Self.editBox end;
     assert(Self, "Self not resolved!");
     local Text = Self:GetText();
-    if Extra and Text == sNull then return end;
+    if Extra and Text == sEmpty then return end;
     local Command = Function.." "..Text;
     if Extra then Command = Command.." "..Extra end;
     SlashFunc(Command);
@@ -6342,7 +6389,7 @@ ShowInput = function(Text, Function, Current, Extra)
     maxLetters = 256,
     OnShow = function(oSelf)
       local oBox = oSelf.editBox;
-      oBox:SetText(Current or sNull);
+      oBox:SetText(Current or sEmpty);
       oBox:HighlightText();
     end,
     EditBoxOnEnterPressed = Confirm,
@@ -6377,7 +6424,7 @@ end
 MakeLocationString = function()
   local ZoneData;
   local SubZone = GetSubZoneText();
-  if SubZone and SubZone ~= sNull then
+  if SubZone and SubZone ~= sEmpty then
     ZoneData ="the "..SubZone.." of "..GetRealZoneText();
   else
     ZoneData = GetRealZoneText();
@@ -6449,13 +6496,13 @@ MakeMoneyReadable = function(iAmount)
   -- GCTS will fail if < 0 so make sure we handle it
   local sExtra;
   if iAmount < 0 then iAmount, sExtra = -iAmount, "-";
-                 else sExtra = sNull end;
+                 else sExtra = sEmpty end;
   -- Return the amount
   return sExtra..GetCoinTextureString(iAmount);
 end
 -- ===========================================================================
 MakePrettyIcon = function(User)
-  if not SettingEnabled("chaticn") then return sNull end;
+  if not SettingEnabled("chaticn") then return sEmpty end;
   if UnitIsFriend(User) then
     return ICON_LIST[ICON_TAG_LIST.diamond].."0|t";
   end
@@ -6465,13 +6512,13 @@ MakePrettyIcon = function(User)
     end
     return ICON_LIST[ICON_TAG_LIST.circle].."0|t";
   end
-  return sNull;
+  return sEmpty;
 end
 -- ===========================================================================
 MakeQuestPrettyNameId = function(iId)
   local sTitle = C_QuestLog.GetTitleForQuestID(iId);
-  if not sTitle then return sNull end;
-  local sText = sNull;
+  if not sTitle then return sEmpty end;
+  local sText = sEmpty;
   local sTag = C_QuestLog.GetQuestTagInfo(iId);
   if sTag then
     sTag = sTag.tagName;
@@ -6499,7 +6546,7 @@ end
 MakePrettyName = function(Part, UMsg, User, Lang, Chan, Flag, MsgId)
   if not SettingEnabled("chatcol") then return end;
 
-  local Msg, R, G, B = sNull;
+  local Msg, R, G, B = sEmpty;
 
   if #User > 0 then
     -- Trim user name if on same realm
@@ -6517,7 +6564,7 @@ MakePrettyName = function(Part, UMsg, User, Lang, Chan, Flag, MsgId)
     end
   end
 
-  if Lang ~= sNull and Lang ~= "Universal" and
+  if Lang ~= sEmpty and Lang ~= "Universal" and
      Lang ~= DEFAULT_CHAT_FRAME.defaultLanguage then
     R, G, B = StringToColour(Lang);
     Msg = format("%s(|cff%02x%02x%02x%s|r) %s", Msg, R, G, B, Lang, UMsg);
@@ -6544,7 +6591,7 @@ MakePrettyName = function(Part, UMsg, User, Lang, Chan, Flag, MsgId)
   if not I then return nil end;
 
   for Tag in Msg:gmatch("%b{}") do
-    local Term = Tag:gsub("[{}]", sNull):lower();
+    local Term = Tag:gsub("[{}]", sEmpty):lower();
     if ICON_TAG_LIST[Term] and ICON_LIST[ICON_TAG_LIST[Term]] then
       Msg = Msg:gsub(Tag, ICON_LIST[ICON_TAG_LIST[Term]].."0|t");
     end
@@ -6567,7 +6614,7 @@ ShowDelayedWhispers = function()
     -- Colour
     local sColour, sExtra;
     if aData.B then sColour, sExtra = "BN_WHISPER", "on B.Net ";
-               else sColour, sExtra = "WHISPER", sNull end;
+               else sColour, sExtra = "WHISPER", sEmpty end;
     -- Print the whisper
     Print(aData.N.." whispered "..sExtra..MakeTime(time()-aData.T)..
       " ago: "..aData.M, ChatTypeInfo[sColour]);
@@ -6805,7 +6852,7 @@ ShowPasteMenu = function(Frame, Function)
           tileSize = 8,
           insets   = { left = 0, right = 0, top = 0, bottom = 0 }
         });
-        Frame:SetFont("fonts\\frizqt__.ttf", 12, sNull);
+        Frame:SetFont("fonts\\frizqt__.ttf", 12, sEmpty);
         Frame:SetShadowColor(0, 0, 0);
         Frame:SetShadowOffset(1, -1);
         Frame:SetBackdropColor(0, 0, 0, 1);
@@ -6872,10 +6919,10 @@ StripColour = function(sT)
     iCount = iCount+1;
     return "\29"..iCount;
   end);
-  sT = sT:gsub("\124c%x%x%x%x%x%x%x%x", sNull):
-          gsub("\124c", sNull):
-          gsub("\124[Hh]", sNull):
-          gsub("\124r", sNull);
+  sT = sT:gsub("\124c%x%x%x%x%x%x%x%x", sEmpty):
+          gsub("\124c", sEmpty):
+          gsub("\124[Hh]", sEmpty):
+          gsub("\124r", sEmpty);
   while iCount > 0 do
     sT = sT:gsub("\29"..iCount, aLinks[iCount]);
     iCount = iCount - 1;
@@ -6958,15 +7005,15 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
   oDialog:SetScript("OnHide", function()
     PlaySound(SOUNDKIT.IG_ABILITY_CLOSE);
     oDialog:StopMovingOrSizing();
-    oTitleText:SetText(sNull);
-    oSubTitleText:SetText(sNull);
-    oBrowser:SetText(sNull);
+    oTitleText:SetText(sEmpty);
+    oSubTitleText:SetText(sEmpty);
+    oBrowser:SetText(sEmpty);
     if fEditorFunction then
       fEditorFunction(oEditor:GetText(), sEditorVariable);
       fEditorFunction = nil;
     end
     sEditorVariable = nil;
-    oEditor:SetText(sNull);
+    oEditor:SetText(sEmpty);
     oEditor:ClearFocus();
     ToggleDropDownMenu(nil, nil, MhMod);
 
@@ -7065,7 +7112,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
   oBrowser:SetWidth(oScrollBar:GetWidth());
   -- oDialog editor
   oEditor = CreateFrame("EditBox", nil, oScrollFrame)
-  oEditor:SetFont("fonts\\frizqt__.ttf", 14, sNull);
+  oEditor:SetFont("fonts\\frizqt__.ttf", 14, sEmpty);
   oEditor:SetShadowColor(0, 0, 0);
   oEditor:SetShadowOffset(1, -1);
   oEditor:SetJustifyH("LEFT");
@@ -7106,7 +7153,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
   oConfigFrame.MaxCat = 0;
   oConfigFrame.MaxOpt = 0;
   oConfigEditbox = CreateFrame("EditBox");
-  oConfigEditbox:SetFont("fonts\\frizqt__.ttf", 12, sNull);
+  oConfigEditbox:SetFont("fonts\\frizqt__.ttf", 12, sEmpty);
   oConfigEditbox:SetShadowColor(0, 0, 0);
   oConfigEditbox:SetShadowOffset(1, -1);
   oConfigEditbox:SetJustifyH("RIGHT");
@@ -7250,9 +7297,9 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
       ChildFrame:SetScript("OnLeave", nil);
       ChildFrame:SetScript("OnMouseUp", nil);
       ChildFrame:Hide();
-      ChildFrame.TextLeft:SetText(sNull);
-      ChildFrame.TextCentre:SetText(sNull);
-      ChildFrame.TextRight:SetText(sNull);
+      ChildFrame.TextLeft:SetText(sEmpty);
+      ChildFrame.TextCentre:SetText(sEmpty);
+      ChildFrame.TextRight:SetText(sEmpty);
       ChildFrame.Variable = nil;
       NumOpt = NumOpt + 1;
     end end
@@ -7263,8 +7310,8 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
       ChildFrame:SetScript("OnLeave", nil);
       ChildFrame:SetScript("OnMouseUp", nil);
       ChildFrame:Hide();
-      ChildFrame.TextLeft:SetText(sNull);
-      ChildFrame.TextRight:SetText(sNull);
+      ChildFrame.TextLeft:SetText(sEmpty);
+      ChildFrame.TextRight:SetText(sEmpty);
       NumCat = NumCat + 1;
     end end
   end
@@ -7433,7 +7480,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
               oConfigEditbox:SetFocus(true);
               oConfigEditbox:ClearAllPoints();
               oConfigEditbox:SetPoint("RIGHT", Self, -iBorder, 0);
-              oConfigEditbox:SetText(Self.TextRight:GetText() or sNull);
+              oConfigEditbox:SetText(Self.TextRight:GetText() or sEmpty);
               Self.TextRight:Hide();
               oConfigEditbox:HighlightText();
               oConfigEditbox:Show();
@@ -7487,7 +7534,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
       assert(Self.Variable, "No parent variable");
       local VarData = ConfigData.Dynamic[Self.Variable];
       assert(VarData, "Variable data for "..Self.Variable.." not found");
-      local Value = Self:GetText():trim() or sNull;
+      local Value = Self:GetText():trim() or sEmpty;
       if #Value <= 0 then SetDynSetting(Self.Variable, VarData.DF);
       elseif type(VarData.DF) == "number" then
         Value = tonumber(Value);
@@ -7555,7 +7602,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
         "dialog to see some logs!");
       oBrowser:Show();
     else
-      oBrowser:SetText(sNull);
+      oBrowser:SetText(sEmpty);
       oBrowser:Hide();
     end
     HideRest(NumOpt, NumCat);
@@ -7685,7 +7732,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
         "stats!");
       oBrowser:Show();
     else
-      oBrowser:SetText(sNull);
+      oBrowser:SetText(sEmpty);
       oBrowser:Hide();
     end
     HideRest(NumOpt, NumCat);
@@ -7785,10 +7832,10 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
             NumOpt = NumOpt + 1;
             OptFrame:SetBackdropColor(0, 0, .1);
             OptFrame:SetBackdropBorderColor(0, 0, .2);
-            OptFrame.TextLeft:SetText(sNull);
+            OptFrame.TextLeft:SetText(sEmpty);
             OptFrame.TextCentre:
               SetText("There are no records to display for this statistic");
-            OptFrame.TextRight:SetText(sNull);
+            OptFrame.TextRight:SetText(sEmpty);
             Parent = OptFrame;
             CatFrame:SetBackdropColor(.7, 0, 0);
             CatFrame:SetBackdropBorderColor(.8, 0, 0);
@@ -7843,7 +7890,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
         "stats!");
       oBrowser:Show();
     else
-      oBrowser:SetText(sNull);
+      oBrowser:SetText(sEmpty);
       oBrowser:Hide();
     end
     HideRest(NumOpt, NumCat);
@@ -7928,7 +7975,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
           });
           OptFrame.Variable = Option;
           OptFrame.TextLeft:SetText(Name);
-          OptFrame.TextCentre:SetText(sNull);
+          OptFrame.TextCentre:SetText(sEmpty);
           OptFrame:SetBackdropColor(.6, 0, 0);
           OptFrame:SetBackdropBorderColor(.7, 0, 0);
           OptFrame.TextRight:SetText(Filter(Var));
@@ -7983,7 +8030,7 @@ ShowDialog = function(Body, Caption, Type, TypeParam)
         "You may need to enable to option to track these details for you.");
       oBrowser:Show();
     else
-      oBrowser:SetText(sNull);
+      oBrowser:SetText(sEmpty);
       oBrowser:Hide();
     end
     oSubTitleText:SetText("A total of |c0000ff00"..
@@ -8131,7 +8178,7 @@ WhisperIsDelayed = function(Msg, User, MsgId, UserId)
   local function ProcessWhisper(sResponse)
     -- Get prefix if battle.net whisper
     local sPrefix;
-    if UserId then sPrefix = "BN" else sPrefix = sNull end;
+    if UserId then sPrefix = "BN" else sPrefix = sEmpty end;
     -- Get user colour
     local R, G, B = StringToColour(User);
     -- Add to delayed whisper list
@@ -8364,7 +8411,7 @@ FormatNumber = function(iNum)
   if iNum > 1000000000000 then iNum, sSuffix = iNum/1000000000, " B";
   elseif iNum > 1000000000 then iNum, sSuffix = iNum/1000000, " M";
   elseif iNum > 1000000 then iNum, sSuffix = iNum/1000, " K";
-  else sSuffix = sNull end;
+  else sSuffix = sEmpty end;
   return BreakUpLargeNumbers(ceil(iNum))..sSuffix;
 end
 -- ===========================================================================
@@ -8392,7 +8439,7 @@ end
 MakeTimestamp = function()
   -- Use internal Blizzard timestamp cvar for timestamp
   local sTimestamp = GetCVar("showTimestamps");
-  if not sTimestamp or sTimestamp == "none" then return sNull end;
+  if not sTimestamp or sTimestamp == "none" then return sEmpty end;
   return "(|cff7f7f7f"..date(sTimestamp:trim()).."|r) ";
 end
 -- == Converts urls in text to clickable hyperlinks ==========================
@@ -8769,7 +8816,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     Text:SetShadowColor(0, 0, 0);
     Text:SetShadowOffset(1, -1);
     Text:SetPoint("RIGHT", oFrame, "RIGHT", 0, 0);
-    Text:SetFont("fonts\\frizqt__.ttf", 10, sNull);
+    Text:SetFont("fonts\\frizqt__.ttf", 10, sEmpty);
     Text:SetJustifyH("RIGHT");
     local Dps = true;
     -- Update position function
@@ -8830,7 +8877,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     oFrame:SetScript("OnEvent", function(_, sEvent)
       -- Hide and return if not needed
       if not bShowDps then
-        if oFrame:IsShown() then Text:SetText(sNull) oFrame:Hide() end;
+        if oFrame:IsShown() then Text:SetText(sEmpty) oFrame:Hide() end;
         return;
       end
       -- Out of combat?
@@ -8877,7 +8924,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     -- Add power bar text for the power bar
     local TooltipManaBarText =
       TooltipManaBar:CreateFontString(nil, nil, "NumberFontNormal");
-    TooltipManaBarText:SetFont("fonts\\frizqt__.ttf", 10, sNull);
+    TooltipManaBarText:SetFont("fonts\\frizqt__.ttf", 10, sEmpty);
     TooltipManaBarText:SetShadowColor(0, 0, 0);
     TooltipManaBarText:SetShadowOffset(1, -1);
     TooltipManaBarText:SetPoint("CENTER", TooltipManaBar, "CENTER", 0, 0);
@@ -8885,7 +8932,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     -- Add text to the default gametooltip  health bar
     local TooltipHealthBarText =
       GameTooltipStatusBar:CreateFontString(nil, nil, "NumberFontNormal")
-    TooltipHealthBarText:SetFont("fonts\\frizqt__.ttf", 10, sNull);
+    TooltipHealthBarText:SetFont("fonts\\frizqt__.ttf", 10, sEmpty);
     TooltipHealthBarText:SetShadowColor(0, 0, 0);
     TooltipHealthBarText:SetShadowOffset(1, -1);
     TooltipHealthBarText:SetPoint("CENTER", GameTooltipStatusBar,
@@ -8905,11 +8952,11 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       local UC, UCF, CC = UnitClass(sUnit);
       if UC then
         CC = BAnd(tonumber("0x"..RAID_CLASS_COLORS[UCF].colorStr), 0xFFFFFF);
-        if not UnitIsPlayer(sUnit) then UC, RC = sNull, CC;
+        if not UnitIsPlayer(sUnit) then UC, RC = sEmpty, CC;
         elseif UC == "Demon Hunter" then UC = "D.Hunter ";
         elseif UC == "Death Knight" then UC = "D.Knight ";
         else UC = UC.." " end;
-      else UC, CC = sNull, 0xFFFFFF end;
+      else UC, CC = sEmpty, 0xFFFFFF end;
       local UL, LC = UnitLevel(sUnit), 0xFFFFFF;
       if UnitFactionGroup(sUnit) ~= UnitFactionGroup("player") then
         local LD = UL - UnitLevel("player");
@@ -8941,7 +8988,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         if BAnd(FlagsModded, 0x10) ~= 0 then
           tinsert(UCC, "Boss") end;
         UCC = "("..strjoin(" ", unpack(UCC))..")";
-      else UCC = sNull end;
+      else UCC = sEmpty end;
       local UN, US = UnitName(sUnit);
       local BDC    = { R=0, G=0, B=0 };
       local NC     = 0xFFFFFF;
@@ -9004,7 +9051,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         BDC = { R=.25, G=.25, B=.25 };
       end
       GameTooltip:SetBackdropColor(BDC.R, BDC.G, BDC.B, 0.5);
-      if US and US ~= sNull then
+      if US and US ~= sEmpty then
         _G[TooltipName.."TextRight1"]:SetText(format("|cff7f7f7f%s|r", US));
         US = UN:match("^(.+)-");
       end
@@ -9018,12 +9065,12 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
           TooltipRight2:SetText(format("|cff7f7f7f%s|r", GuildOn));
           TooltipRight2:Show();
         end
-        local _, LL = TooltipLeft2:GetText():gsub("Level.*", sNull);
+        local _, LL = TooltipLeft2:GetText():gsub("Level.*", sEmpty);
         if LL == 1 then LL = 2;
         else
           LL = _G[TooltipName.."TextLeft3"];
           if LL and LL:GetText() then
-            _, LL = LL:GetText():gsub("Level.*", sNull);
+            _, LL = LL:GetText():gsub("Level.*", sEmpty);
             if LL == 1 then LL = 3 else LL = nil end;
           else LL = nil end;
         end
@@ -9077,7 +9124,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
           local Health = UnitHealth(sUnit);
           local HealthPerc = Health/HealthMax*100;
           local Extra;
-          if HealthPerc == 100 then Extra = sNull else
+          if HealthPerc == 100 then Extra = sEmpty else
             Extra = " ("..ceil(HealthPerc).."%)" end;
           if Health > 1 then
             ProcessTextString(TooltipHealthBarText, HealthPerc,
@@ -9099,7 +9146,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
             local ManaColour = PowerBarColor[UnitPowerType(sUnit)];
             TooltipManaBar:SetStatusBarColor(ManaColour.r, ManaColour.g, ManaColour.b);
             local Extra;
-            if ManaPerc == 100 then Extra = sNull;
+            if ManaPerc == 100 then Extra = sEmpty;
             else Extra = " ("..ceil(ManaPerc).."%)" end;
             ProcessTextString(TooltipManaBarText, ManaPerc,
               OneOrBoth(Mana,ManaMax)..Extra);
@@ -9377,9 +9424,9 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         elseif IsShiftKeyDown() then LocalCommandsData.stats();
         else LocalCommandsData.config() end;
       else
-        if IsAltKeyDown() then LocalCommandsData.edit(sNull, { }, 0);
-        elseif IsControlKeyDown() then LocalCommandsData.logdata(sNull, { }, 0);
-        elseif IsShiftKeyDown() then LocalCommandsData.money(sNull, { }, 0);
+        if IsAltKeyDown() then LocalCommandsData.edit(sEmpty, { }, 0);
+        elseif IsControlKeyDown() then LocalCommandsData.logdata(sEmpty, { }, 0);
+        elseif IsShiftKeyDown() then LocalCommandsData.money(sEmpty, { }, 0);
         else
           UIDropDownMenu_Initialize(MhMod, DropDownMenuCallback, "MENU", 1);
           ToggleDropDownCallback();
@@ -9557,7 +9604,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
         if sName then return UpdateCount(sName) end;
       end,
       PetActionButton = function(iIndex)
-        local sName = C_Spell.GetSpellInfo(GetPetActionInfo(iIndex) or sNull);
+        local sName = C_Spell.GetSpellInfo(GetPetActionInfo(iIndex) or sEmpty);
         if sName then return UpdateCount(sName) end;
       end
     }) do for iIndex = 1, 12 do
