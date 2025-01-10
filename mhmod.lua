@@ -4,7 +4,7 @@
 local sEmpty                  = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 18,             Extra = sEmpty,
+  Release     = 19,             Extra = sEmpty,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
@@ -69,37 +69,37 @@ local ConfigDynamicData;               -- Alias to 'mhconfig.dynamic'
 -- Frames data ----------------------------------------------------------------
 local MhMod;                           -- Main MhMod frames
 local MenuEditBoxFrame;                -- Generic menu edit box frame
-local PetManaBarFrames       = { };    -- Party pet mana bar frames
+local PetManaBarFrames        = { };   -- Party pet mana bar frames
 -- Dynamic storage ------------------------------------------------------------
-local ArchaeologyData        = { };    -- Archaeology data
-local AutoMsgData            = { };    -- DND/AFK message anti-spam data
-local BagData                = { };    -- Bags data
-local BagsData               = { };    -- Individual bags data
-local BGData                 = { };    -- Battleground data
-local BGScoresData           = { };    -- Battleground scores data
-local CalendarEventsData     = { };    -- Calendar events data
-local CommandThrottleData    = { };    -- Public command system flood control
-local CurrencyData           = { };    -- Currency data
-local EquipData              = { };    -- Strip/dress commands
-local FactionData            = { };    -- Faction (Reputation) data
-local FriendsData            = { };    -- Friends data array
-local GroupBGData            = { };    -- Battleground group and raid data
-local GroupData              = { };    -- Realm group and raid data
-local PrintData              = { };    -- Smoothed print data
-local InstanceData           = { };    -- Saved instances data
-local LastNewMail            = { };    -- New mail data
-local MapPingerData          = { };    -- Map ping flood control
-local MirrorTimerData        = { };    -- Countdown timers (breath, etc.)
-local QuestData              = { };    -- Quests data
+local ArchaeologyData         = { };   -- Archaeology data
+local AutoMsgData             = { };   -- DND/AFK message anti-spam data
+local BagData                 = { };   -- Bags data
+local BagsData                = { };   -- Individual bags data
+local BGData                  = { };   -- Battleground data
+local BGScoresData            = { };   -- Battleground scores data
+local CalendarEventsData      = { };   -- Calendar events data
+local CommandThrottleData     = { };   -- Public command system flood control
+local CurrencyData            = { };   -- Currency data
+local EquipData               = { };   -- Strip/dress commands
+local FactionData             = { };   -- Faction (Reputation) data
+local FriendsData             = { };   -- Friends data array
+local GroupBGData             = { };   -- Battleground group and raid data
+local GroupData               = { };   -- Realm group and raid data
+local PrintData               = { };   -- Smoothed print data
+local InstanceData            = { };   -- Saved instances data
+local LastNewMail             = { };   -- New mail data
+local MapPingerData           = { };   -- Map ping flood control
+local MirrorTimerData         = { };   -- Countdown timers (breath, etc.)
+local QuestData               = { };   -- Quests data
 local RealmMoneyData;                  -- Money statistical data of all chars
-local TextFloodData          = { };    -- Player text flood control
-local TimerData              = { };    -- Timers
-local WhisperData            = { };    -- Contains all whisper times
-local WhisperExemptData      = { };    -- Players recently whispered
+local TextFloodData           = { };   -- Player text flood control
+local TimerData               = { };   -- Timers
+local WhisperData             = { };   -- Contains all whisper times
+local WhisperExemptData       = { };   -- Players recently whispered
 local GuildData;                       -- Guild member data
 -- Other data -----------------------------------------------------------------
-local OldChatInputTexture    = { };    -- Self explanitory
-local OldChatTabTexture      = { };    -- Self explanitory
+local OldChatInputTexture     = { };   -- Self explanitory
+local OldChatTabTexture       = { };   -- Self explanitory
 -- Cached commonly used settings. We can't do them all unfortunately ----------
 local bStatsBests             = false; -- Announce best stats
 local bStatsReset             = false; -- Reset stats on combat
@@ -1618,21 +1618,42 @@ EventsData = {
       "\n\n|cffff0000You have not completed this task yet!|r") end;
   end,
   -- Ui message generated ----------------------------------------------------
-  UI_INFO_MESSAGE = function(Msg)
-    if not SettingEnabled("trdeenh") then return end;
-    if Msg == ERR_TRADE_CANCELLED then
-      PlaySoundFile("Sound/Interface/Error.wav");
-    elseif Msg == ERR_TRADE_COMPLETE then
-      PlaySoundFile("Sound/Interface/AuctionWindowClose.wav");
+  UI_INFO_MESSAGE = function(...)
+    -- Messages we're interested in
+    local aMessages = {
+      [ERR_TRADE_CANCELLED] = "Sound/Interface/Error.wav",
+      [ERR_TRADE_COMPLETE] = "Sound/Interface/AuctionWindowClose.wav"
+    }
+    -- Actual event function
+    local function Event(sMsg)
+      -- Return if trade enhancement settings are disabled
+      if not SettingEnabled("trdeenh") then return end;
+      -- If it's a message we're interested in then play specified sound
+      local sSound = aMessages[sMsg];
+      if sSound then PlaySoundFile(sSound) end;
     end
+    -- Replace initialisation function
+    EventsData.UI_INFO_MESSAGE = Event;
+    -- Execute real function for first time
+    Event(...);
   end,
   -- Player trade item list changed ------------------------------------------
-  TRADE_PLAYER_ITEM_CHANGED = function(Id)
+  TRADE_PLAYER_ITEM_CHANGED = function()
     if not SettingEnabled("trdeenh") then return end;
     PlaySoundFile("Sound/Interface/GuildBankOpenBag2.wav");
   end,
   -- Target trade item list changed ------------------------------------------
-  TRADE_TARGET_ITEM_CHANGED = function(Id)
+  TRADE_TARGET_ITEM_CHANGED = function()
+    if not SettingEnabled("trdeenh") then return end;
+    PlaySoundFile("Sound/Interface/GuildBankOpenBag3.wav");
+  end,
+  -- Transmog removed --------------------------------------------------------
+  TRADE_POTENTIAL_REMOVE_TRANSMOG = function()
+    if not SettingEnabled("trdeenh") then return end;
+    PlaySoundFile("Sound/Interface/GuildBankOpenBag3.wav");
+  end,
+  -- Enchant changed ---------------------------------------------------------
+  TRADE_POTENTIAL_BIND_ENCHANT = function()
     if not SettingEnabled("trdeenh") then return end;
     PlaySoundFile("Sound/Interface/GuildBankOpenBag3.wav");
   end,
@@ -1640,6 +1661,11 @@ EventsData = {
   PLAYER_TRADE_MONEY = function()
     if not SettingEnabled("trdeenh") then return end;
     PlaySoundFile("Sound/Interface/LootCoinLarge.wav");
+  end,
+  -- Player trade currency changed -------------------------------------------
+  PLAYER_TRADE_CURRENCY = function()
+    if not SettingEnabled("trdeenh") then return end;
+    PlaySoundFile("Sound/Interface/GuildBankOpenBag3.wav");
   end,
   -- Trade money changed -----------------------------------------------------
   TRADE_MONEY_CHANGED = function()
@@ -1665,7 +1691,6 @@ EventsData = {
       return;
     end
     if not SettingEnabled("trdeenh") then return end;
-    PlaySoundFile("Sound/Interface/AuctionWindowOpen.wav");
     if bTradeStartedByMe then
       Print("You opened a trade window with "..MakePlayerLink(Player).."!",
         ChatTypeInfo.SYSTEM);
@@ -1673,6 +1698,7 @@ EventsData = {
       Print(MakePlayerLink(Player).." opened a trade window with you!",
         ChatTypeInfo.SYSTEM);
     end
+    PlaySoundFile("Sound/Interface/AuctionWindowOpen.wav");
   end,
   -- The mechant dialog was opened -------------------------------------------
   MERCHANT_SHOW = function()
@@ -1806,7 +1832,6 @@ EventsData = {
             local iUpper = aRData.renownLevelThreshold;
             local iCurrent = aRData.renownReputationEarned;
             local iBottom = (iLevel - 1) * iUpper;
-            local iTotalValue = iBottom + iCurrent;
             local nPercent = iCurrent / iUpper * 100;
             aNew[sName] = {
               C  = sHeader,            CH = iUpper,
@@ -1819,18 +1844,17 @@ EventsData = {
           -- It's not a renown faction?
           else
             local iBottom = aData.currentReactionThreshold;
-            local iCurrent = aData.currentStanding;
-            local iUpper = aData.nextReactionThreshold;
-            local iCurrentValue = iCurrent - iBottom;
-            local iTotalValue = 43000 + iCurrent;
-            local iNext = iUpper - iBottom;
+            local iStanding = aData.currentStanding;
+            local iCurrent = iStanding - iBottom;
+            local iTotal = 43000 + iStanding;
+            local iNext = aData.nextReactionThreshold - iBottom;
             local aData = {
               C  = sHeader,            CH = iNext,
-              CV = iCurrentValue,      CP = iCurrentValue / iNext * 100,
+              CV = iCurrent,           CP = iCurrent / iNext * 100,
               I  = iIndex,             M  = false,
               R  = aORanks[iBottom],   TB = 43000 + iBottom,
-              TH = 85000,              TV = iTotalValue,
-              TP = iTotalValue / 85000 * 100,
+              TH = 85000,              TV = iTotal,
+              TP = iTotal / 85000 * 100,
               U  = iUniqueId,
             };
             -- Get paragon information and if it's valid?
@@ -1869,79 +1893,107 @@ EventsData = {
         -- We're done
         return;
       end
-      local CFCColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
-      local Tracking = SettingEnabled("advtrak");
-      local AutoTrack = SettingEnabled("autoswr");
-      for Faction, FactionTable in pairs(aNew) do
-        local FDATA = FactionData[Faction];
-        if FDATA and Tracking and Faction ~= "Guild" then
-          if FactionTable.TV ~= FDATA.TV then
-            local Msg, Next, Amount;
-            if FactionTable.TV < FDATA.TV then
-              if not FactionTable.M then
-                Next = FacitonTable.TV - FactionTAble.TB;
-                Msg = "Lost";
-                Amount = FDATA.TV - FactionTable.TV;
+      -- Get colour for messages, tracking and automatic tracking settings
+      local aColour = ChatTypeInfo.COMBAT_FACTION_CHANGE;
+      local bIsAutoTrack = SettingEnabled("autoswr");
+      -- Advanced tracking is enabled?
+      if SettingEnabled("advtrak") then
+        -- Remove 'Guild' reputation for now because then guild reputation
+        -- appears twice if we don't do this.
+--        local aGuild = aNew.Guild;
+--        if aGuild then aNew.Guild = nil end;
+        -- Enumerate through new data
+        for sNFName, aNFData in pairs(aNew) do
+          -- Get old faction data and if it exists?
+          local aOFData = FactionData[sNFName];
+          if aOFData then
+            -- Get old/new total value and has the value changed?
+            local iOTotalValue, iNTotalValue = aOFData.TV, aNFData.TV;
+            if iNTotalValue ~= iOTotalValue then
+              -- Which way, the next threshold and the amount it changed by
+              local sMsg, iNext, iAmount;
+              -- If reputation was lost?
+              if iNTotalValue < iOTotalValue then
+                -- Renown level increases will show drops so ignore them
+                if not aNFData.M then
+                  sMsg = "Lost ";
+                  iNext = iNTotalValue - aNFData.TB;
+                  iAmount = iOTotalValue - iNTotalValue;
+                end
+              -- Reputation was gained?
+              else
+                sMsg = "Received ";
+                iNext = aNFData.CH - aNFData.CV;
+                iAmount = iNTotalValue - iOTotalValue;
               end
-            else
-              Next = FactionTable.CH - FactionTable.CV;
-              Msg = "Received";
-              Amount = FactionTable.TV - FDATA.TV;
-            end
-            if Msg then
-              Msg = Msg.." "..BreakUpLargeNumbers(Amount).." REP! ("..Faction;
-              if FactionTable.R then Msg = Msg.."; "..FactionTable.R end;
-              if FactionTable.TV < FactionTable.TH then
-                Msg = Msg.."; "..BreakUpLargeNumbers(FactionTable.CV);
-                if Next then
-                  Msg = Msg.."; "..RoundNumber(FactionTable.CP, 2).."%; Next: "..
-                    BreakUpLargeNumbers(Next);
-                  local Count = ceil(Next / Amount);
-                  if Count > 0 then
-                    Msg = Msg.."; x"..BreakUpLargeNumbers(Count);
+              -- We have something to report?
+              if sMsg then
+                -- Add amount changed by
+                sMsg = sMsg..BreakUpLargeNumbers(iAmount).." REP! ("..sNFName;
+                -- Add reputation level
+                if aNFData.R then sMsg = sMsg.."; "..aNFData.R end;
+                -- If we're under the maximum level?
+                if iNTotalValue < aNFData.TH then
+                  -- Add total reputation, percentage and to next level
+                  sMsg = sMsg.."; "..BreakUpLargeNumbers(aNFData.CV).."; "..
+                         RoundNumber(aNFData.CP, 2).."%; Next: "..
+                         BreakUpLargeNumbers(iNext);
+                  -- Report how many more of these increases to next level?
+                  local iCount = ceil(iNext / iAmount);
+                  if iCount > 0 then
+                    sMsg = sMsg.."; x"..BreakUpLargeNumbers(iCount);
                   end
                 end
+                -- Print the message with the system colour
+                Print(sMsg..")", aColour);
               end
-              Print(Msg..")", CFCColour);
+              -- If we're automatically tracking reputation then add data
+              if bIsAutoTrack then aAutoSetData[aNFData.I] = iAmount end;
+            -- Has the paragon experience changed?
+            elseif aNFData.PC and aNFData.PC ~= aOFData.PC then
+              -- Get current value, next threshold and amount changed by
+              local iTotal = aNFData.PV;
+              local iNext, iChange =
+                aNFData.PH - iTotal, aNFData.PC - aOFData.PC;
+              -- Start building message to send to player
+              local sMsg = "Received "..BreakUpLargeNumbers(iChange)..
+                " PTS! ("..sNFName.."; "..
+                RoundNumber(iTotal / aNFData.PH * 100, 2)..
+                "%; Next: "..BreakUpLargeNumbers(iNext);
+              -- Get changes required to be on the next level and add to msg
+              local iCount = iNext / iChange;
+              if iCount > 0 then
+                sMsg = sMsg.."; x"..BreakUpLargeNumbers(ceil(iCount));
+              end
+              -- Print the message to player in system colour
+              Print(sMsg..")", aColour);
+              -- If we're automatically tracking reputation then add data
+              if bIsAutoTrack then aAutoSetData[aNFData.I] = iChange end;
             end
-            if AutoTrack then aAutoSetData[FactionTable.I] = Amount end;
-          elseif FactionTable.PC and FactionTable.PC ~= FDATA.PC then
-            local AmountLevel = FactionTable.PV;
-            local Next, Amount =
-              FactionTable.PH - AmountLevel,
-              FactionTable.PC - FDATA.PC;
-            local Msg = "Received "..BreakUpLargeNumbers(Amount)..
-              " PTS! ("..Faction.."; "..
-              RoundNumber(AmountLevel / FactionTable.PH * 100, 2)..
-              "%; Next: "..BreakUpLargeNumbers(Next);
-            local Count = Next / Amount;
-            if Count > 0 then
-              Msg = Msg.."; x"..BreakUpLargeNumbers(ceil(Count));
-            end
-            Print(Msg..")", CFCColour);
-            if AutoTrack then aAutoSetData[FactionTable.I] = Amount end;
           end
         end
+        -- Add guild data back
+--        aNew.Guild = aGuild;
       end
       -- If we have auto track reputation enabled?
-      if AutoTrack then
+      if bIsAutoTrack then
         -- Because we can get spammed with reputation gains, we'll use a timer
         -- in which each call of this overwrites the previous timer.
         CreateTimer(1, function()
           -- Highest found value and id
-          local Highest, HighestId = 0, 0;
+          local iHighest, iHighestId = 0, 0;
           -- Find the highest value
-          for Index, Value in pairs(aAutoSetData) do
-            if Value > Highest then HighestId, Highest = Index, Value end;
+          for iIndex, iValue in pairs(aAutoSetData) do
+            if iValue > iHighest then
+              iHighestId, iHighest = iIndex, iValue;
+            end
           end
           -- If we got the highest id then set it and clear data
-          if HighestId > 0 then
-            funcSWFBI(HighestId);
-            aAutoSetData = { };
-          end
+          if iHighestId > 0 then funcSWFBI(iHighestId) end;
+          aAutoSetData = { };
         end, 1, "FactionCalculator");
       end
-      -- Set new data
+      -- Set new datax
       FactionData = aNew;
       -- Enable updates again
       EventsData.UPDATE_FACTION = fcbEnabled;
@@ -1952,14 +2004,19 @@ EventsData = {
   end,
   -- An auto-complete quest was completed ------------------------------------
   QUEST_AUTOCOMPLETE = function(QuestID)
+    -- Return if setting isn't enabled for auto quest complete
     if not SettingEnabled("autoqcm") then return end;
-    assert(QuestID, "No quest id to autocomplete event!");
-    Data = QuestData[QuestID];
-    assert(Data, "No data for quest!");
-    ShowQuestComplete(Data.N);
+    assert(type(iQuestID)=="number");
+    -- Get and check data for requested quest id
+    local aQData = aQuestData[QuestID];
+    assert(type(aQData)=="table");
+    -- Automatically complete the uest
+    ShowQuestComplete(aQData.N);
   end,
   -- A quest was completed ---------------------------------------------------
   QUEST_COMPLETE = function()
+    -- If auto complete quests is enabled and there is just one reward choice,
+    -- and shift key isn't held then grab the reward and complete quest
     if SettingEnabled("autoqcm") and GetNumQuestChoices() <= 1 and
       not IsShiftKeyDown() then GetQuestReward(1) end;
   end,
@@ -2071,15 +2128,15 @@ EventsData = {
   -- Scoreboard changed in the battleground ----------------------------------
   UPDATE_BATTLEFIELD_SCORE = function()
     local NewBGScoresData = {
+      A = { },
+      C = GetNumBattlefieldScores(),
+      E = IsActiveBattlefieldArena(),
+      H = { },
+      M = { },
       N = { },
       R = { },
-      C = GetNumBattlefieldScores(),
-      M = { },
-      X = GetBattlefieldInstanceExpiration(),
       W = GetBattlefieldWinner(),
-      E = IsActiveBattlefieldArena(),
-      A = { },
-      H = { },
+      X = GetBattlefieldInstanceExpiration(),
     };
     if NewBGScoresData.C <= 0 then
       BGScoresData = NewBGScoresData;
@@ -6554,7 +6611,7 @@ MakePrettyName = function(Part, UMsg, User, Lang, Chan, Flag, MsgId)
 
     R, G, B = StringToColour(User);
     if Flag == "NPC" then Msg = _G["CHAT_"..Part.."_GET"]:gsub("%%s",
-      format("[NPC] [|cff%02x%02x%02x%s|r]", R, G, B, User));
+      format("[|cff000000NPC|r][|cff%02x%02x%02x%s|r]", R, G, B, User));
     elseif Flag == "BN" then Msg = _G["CHAT_"..Part.."_GET"]:gsub("%%s",
       format("|HBNplayer:%s:%u|h[|cff%02x%02x%02x%s%s|r]|h", User, MsgId or 0,
         R, G, B, MakePrettyIcon(User), User));
