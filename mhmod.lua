@@ -4,7 +4,7 @@
 local sEmpty                  = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 19,             Extra = sEmpty,
+  Release     = 20,             Extra = sEmpty,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
@@ -1252,71 +1252,113 @@ EventsData = {
   end,
 --]]
   -- A quest giver with options is shown -------------------------------------
-  GOSSIP_SHOW = function()
-    -- Ignore automation if shift is pressed or automation setting is disabled
-    if IsShiftKeyDown() or not SettingEnabled("autoslq") then return end;
-    -- If control is held down then we should just search for gossip options
-    if IsControlKeyDown() then
-      -- Walk through each gossip option again
-      local QA = C_GossipInfo.GetOptions();
-      for iIndex = 1, #QA do
-        -- Get quest item and select it if selectable
-        local aOption = QA[iIndex];
-        if aOption.status == 0 then
-          return C_GossipInfo.SelectOption(aOption.gossipOptionID);
+  GOSSIP_SHOW = function(...)
+    -- Alias tables and functions for speed
+    local nsGI = C_GossipInfo;
+    assert(type(nsGI)=="table");
+    local funcGO = nsGI.GetOptions;
+    assert(type(funcGO)=="function");
+    local funcSO = nsGI.SelectOption;
+    assert(type(funcSO)=="function");
+    local funcGACQ = nsGI.GetActiveQuests;
+    assert(type(funcGACQ)=="function");
+    local funcSACQ = nsGI.SelectActiveQuest;
+    assert(type(funcSACQ)=="function");
+    local funcGAVQ = nsGI.GetAvailableQuests;
+    assert(type(funcGAVQ)=="function");
+    local funcSAVQ = nsGI.SelectAvailableQuest;
+    assert(type(funcSAVQ)=="function");
+    -- Callback functions
+    local aFunctions = {
+      -- Selects normal quests first
+      function(aI) return not aI.isTrivial and
+                          not aI.repeatable and
+                          not aI.frequency end,
+      -- Then legendary quests
+      function(aI) return aI.isLegendary end,
+      -- Then repeatable quests
+      function(aI) return aI.isRepeatable end,
+      -- Then every other quest
+      function(aI) return true end
+    };
+    -- Actual function
+    local function Event()
+      -- Ignore automation if shift pressed or automation setting is disabled
+      if IsShiftKeyDown() then return end;
+      -- Get current options
+      local aOptions = funcGO();
+      -- If control is held down then we should just search for gossip options
+      local bAutoSelectOptions = SettingEnabled("autoslq")
+      if IsControlKeyDown() and bAutoSelectOptions then
+        -- Walk through each gossip option again
+        if #aOptions > 0 then
+          -- Select a random option
+          local aOption = aOptions[math.random(#aOptions)];
+          if aOption.status == 0 then
+            return funcSO(aOption.gossipOptionID);
+          end
+        end
+        -- Nothing found
+        Print("Could not find gossip option to automatically select.");
+      end
+      -- If auto-complete quests enabled?
+      if SettingEnabled("autoqcm") then
+        -- Get active quests and enumerate through them
+        local aActive = funcGACQ();
+        for iIndex = 1, #aActive do
+          -- Get active quest data and if autocomplete it if completed
+          local aOption = aActive[iIndex];
+          if aOption.isComplete then return funcSACQ(aOption.questID) end;
         end
       end
-      -- Nothing found
-      Print("Could not find gossip option to automatically select.");
-    end
-    -- Automatically complete completed quests
-    local QA = C_GossipInfo.GetActiveQuests();
-    for iIndex = 1, #QA do
-      -- Get active quest data and if autocomplete it if completed
-      local aOption = QA[iIndex];
-      if aOption.isComplete then
-        return C_GossipInfo.SelectActiveQuest(aOption.questID);
+      -- Auto select options enabled and have gossip options?
+      if bAutoSelectOptions and #aOptions > 0 then
+        -- Walk through each gossip option
+        for iIndex = 1, #aOptions do
+          -- Get gossip item and select it if its for quest progress
+          local aOption = aOptions[iIndex];
+          if aOption.name:sub(1, 11) == "|cFF0000FF(" then
+            -- Select this option and return
+            return funcSO(aOption.gossipOptionID);
+          end
+        end
       end
-    end
-    -- Get available quest data and if there is some?
-    local QA = C_GossipInfo.GetAvailableQuests();
-    if #QA > 0 then
-      -- Iterate through importance of available quests
-      for iOpt, aFilter in ipairs({
-        -- Selects normal quests first
-        function(aI) return not aI.isTrivial and
-                            not aI.repeatable and
-                            not aI.frequency end,
-        -- Then legendary quests
-        function(aI) return aI.isLegendary end,
-        -- Then repeatable quests
-        function(aI) return aI.isRepeatable end,
-        -- Then every other quest
-        function(aI) return true end
-      }) do
-        -- Enumerate through each available quest
-        for iOpt = 1, #QA do
-          -- Get the item data and if theres a filter match then select it
-          local aOption = QA[iOpt];
-          if aFilter(aOption) then
-            return C_GossipInfo.SelectAvailableQuest(aOption.questID);
+      -- If auto-accept quests enabled?
+      if SettingEnabled("autoaaq") then
+        -- Get available quest data and if there is some?
+        local aAvailable = funcGAVQ();
+        if #aAvailable > 0 then
+          -- Iterate through importance of available quests
+          for iFuncIndex = 1, #aFunctions do
+            -- Get callback function and enumerate through each available quest
+            local fcbFilter = aFunctions[iFuncIndex];
+            for iOptIndex = 1, #aAvailable do
+              -- Get the item data and if theres a filter match then select it
+              local aOption = aAvailable[iOptIndex];
+              if fcbFilter(aOption) then return funcSAVQ(aOption.questID) end;
+            end
           end
         end
       end
     end
-    -- Get gossip options and if theres any?
-    local QA = C_GossipInfo.GetOptions();
-    if #QA > 0 then
-      -- Walk through each gossip option
-      for iIndex = 1, #QA do
-        -- Get gossip item and select it if its for quest progress
-        local aOption = QA[iIndex];
-        if aOption.name:sub(1, 11) == "|cFF0000FF(" then
-          -- Select this option and return
-          return C_GossipInfo.SelectOption(aOption.gossipOptionID);
-        end
+    -- Set actual function and call it for the first time
+    EventsData.GOSSIP_SHOW = Event;
+    Event(...);
+  end,
+  -- Quest giver dialog (when only quests are available) ----------------------
+  QUEST_GREETING = function(...)
+    -- Ignore automation if shift pressed
+    if IsShiftKeyDown() then return end;
+    -- Enumerate thquests and complete all that are done if setting enabled
+    if SettingEnabled("autoqcm") then
+      for iIndex = 1, GetNumActiveQuests() do
+        local sTitle, bComplete = GetActiveTitle(iIndex);
+        if bComplete then return SelectActiveQuest(iIndex) end;
       end
     end
+    -- No completable quests available so accept first available
+    if SettingEnabled("autoaaq") and GetNumAvailableQuests() > 0 then
+      return SelectAvailableQuest(1) end;
   end,
   -- Quest log updated -------------------------------------------------------
   QUEST_LOG_UPDATE = function(...)
@@ -1395,18 +1437,23 @@ EventsData = {
                 else
                   ObjectiveLink = "["..ObjectiveName.."]";
                 end
-                local QuestLink = GetQuestLink(QuestTable.I);
                 local Message = "<";
-                if ObjectiveTable.numFulfilled and
-                   ObjectiveTable.numRequired and
-                   not ObjectiveTable.finished then
-                  Message = Message.."(Progress)";
+                if not ObjectiveTable.finished then
+                  local iCurrent = ObjectiveTable.numFulfilled;
+                  local iTotal =  ObjectiveTable.numRequired;
+                  if type(iCurrent) == "number" and
+                     type(iTotal) == "number"then
+                    Message = Message.."("..floor(iCurrent/iTotal*100).."%)";
+                  else
+                    Message = Message.."(Progress)";
+                  end
                 else
                   Message = Message.."(Done!)";
                   PlaySound(SOUNDKIT.UI_QUEST_ROLLING_FORWARD_01);
                 end
                 PlaySound(SOUNDKIT.IG_QUEST_LIST_SELECT);
-                SendChat(Message..ObjectiveLink..QuestLink..">");
+                SendChat(Message..GetQuestLink(QuestTable.I)..
+                  ObjectiveLink..">");
               end
             end
           end
@@ -1438,7 +1485,8 @@ EventsData = {
             end
           elseif QuestTable.C ~= OldQuestData.C then
             if ProgressReport and (not OnlyWatched or QuestTable.W) then
-              SendChat("<"..GetQuestLink(OldQuestData.I).." is complete!>");
+              local sLink = GetQuestLink(OldQuestData.I);
+              if sLink then SendChat("<"..sLink.." is complete!>") end;
             end
             PlaySound(SOUNDKIT.IG_QUEST_LIST_COMPLETE);
           end
@@ -1492,21 +1540,6 @@ EventsData = {
     end
     -- Call actual function
     return EventsData.QUEST_LOG_UPDATE(...);
-  end,
-  -- Quest giver dialog (different from gossip_show, but why?) ---------------
-  QUEST_GREETING = function()
-    -- Ignore automation if shift is pressed or automation setting is disabled
-    if IsShiftKeyDown() or not SettingEnabled("autoslq") then return end;
-    -- There is latency so we need to delay the automation command
-    CreateTimer(0.1, function()
-      -- Auto-select active completed quests
-      if GetNumActiveQuests() > 0 then
-        local _, bComplete = GetActiveTitle(1);
-        if bComplete then return SelectActiveQuest(1) end;
-      end
-      -- Auto-select newly available quests
-      if GetNumAvailableQuests() > 0 then SelectAvailableQuest(1) end;
-    end, 1, "QGA");
   end,
   -- A shared quest was displayed --------------------------------------------
   QUEST_DETAIL = function()
@@ -4356,43 +4389,44 @@ LocalCommandsData = {
   end,
   resetui = function(UserCall)
     local function InitUnitFrameEnhancements()
-      for Id = 1, 4 do
-        local Parent = _G["PartyMemberFrame"..Id.."PetFrame"];
-        if Parent then
-          local Frame = PetManaBarFrames[Id];
-          if not Frame then
-            Frame = CreateFrame("StatusBar", nil, Parent, "TextStatusBar");
-            Frame:SetID(Id);
-            PetManaBarFrames[Id] = Frame;
-            Frame:SetPoint("TOPLEFT", Parent, 23, -10);
-            Frame:SetWidth(35);
-            Frame:SetHeight(4);
-            Frame:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar");
-          end
-          if SettingEnabled("petmana") then
-            local function UpdatePetManaBar(Self, _, Unit)
-              local ThisUnit = "partypet"..Self:GetID();
-              if Unit ~= ThisUnit then return end;
-              local ThisOwner = "party"..Self:GetID();
-              if UnitInVehicle(ThisOwner) then ThisUnit = ThisOwner end;
-              Self:SetMinMaxValues(1, UnitManaMax(ThisUnit));
-              Self:SetValue(UnitMana(ThisUnit));
-              local ManaColour = PowerBarColor[UnitPowerType(ThisUnit)];
-              Self:SetStatusBarColor(ManaColour.r, ManaColour.g, ManaColour.b);
-            end
-            Frame:RegisterEvent("UNIT_PET");
-            Frame:RegisterEvent("UNIT_FOCUS");
-            Frame:RegisterEvent("UNIT_HEALTH");
-            Frame:RegisterEvent("UNIT_MAXFOCUS");
-            Frame:SetScript("OnEvent", UpdatePetManaBar);
-            UpdatePetManaBar(Frame, nil, "partypet"..Id);
-            Frame:Show();
-          else
-            Frame:UnregisterAllEvents();
-            Frame:SetScript("OnEvent", nil);
-            Frame:Hide();
-          end
+      local function InitPartyMemberPetFrame(Parent)
+        local Frame = PetManaBarFrames[Id];
+        if not Frame then
+          Frame = CreateFrame("StatusBar", nil, Parent, "TextStatusBar");
+          Frame:SetID(Id);
+          PetManaBarFrames[Id] = Frame;
+          Frame:SetPoint("TOPLEFT", Parent, 23, -10);
+          Frame:SetWidth(35);
+          Frame:SetHeight(4);
+          Frame:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar");
         end
+        if SettingEnabled("petmana") then
+          local function UpdatePetManaBar(Self, _, Unit)
+            local ThisUnit = "partypet"..Self:GetID();
+            if Unit ~= ThisUnit then return end;
+            local ThisOwner = "party"..Self:GetID();
+            if UnitInVehicle(ThisOwner) then ThisUnit = ThisOwner end;
+            Self:SetMinMaxValues(1, UnitManaMax(ThisUnit));
+            Self:SetValue(UnitMana(ThisUnit));
+            local ManaColour = PowerBarColor[UnitPowerType(ThisUnit)];
+            Self:SetStatusBarColor(ManaColour.r, ManaColour.g, ManaColour.b);
+          end
+          Frame:RegisterEvent("UNIT_PET");
+          Frame:RegisterEvent("UNIT_FOCUS");
+          Frame:RegisterEvent("UNIT_HEALTH");
+          Frame:RegisterEvent("UNIT_MAXFOCUS");
+          Frame:SetScript("OnEvent", UpdatePetManaBar);
+          UpdatePetManaBar(Frame, nil, "partypet"..Id);
+          Frame:Show();
+        else
+          Frame:UnregisterAllEvents();
+          Frame:SetScript("OnEvent", nil);
+          Frame:Hide();
+        end
+        for _, oFrame in ipairs({
+          PartyMemberFrame1PetFrame, PartyMemberFrame2PetFrame,
+          PartyMemberFrame3PetFrame, PartyMemberFrame4PetFrame
+        }) do InitPartyMemberPetFrame(oFrame) end;
       end
       -- Function to call when updating party member nameplates
       local function SetTargetNameText(oText, sUnit)
