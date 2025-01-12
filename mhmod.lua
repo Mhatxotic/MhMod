@@ -4,7 +4,7 @@
 local sEmpty                  = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 20,             Extra = sEmpty,
+  Release     = 21,             Extra = sEmpty,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
@@ -47,9 +47,6 @@ local iXPLeft                 = 0;     -- XP needed to level
 local iXPMax                  = 0;     -- XP total needed to level
 local iXPSession              = 0;     -- XP gathered this session
 local iXPLastGain             = 0;     -- Last XP gain
--- Artefact data --------------------------------------------------------------
-local iArtefactXPLast         = 0;     -- Last artefact gain
-local iArtefactXPTotal        = 0;     -- Artefact XP total
 -- Money ----------------------------------------------------------------------
 local iMoney                  = 0;     -- Current money
 local iMoneySession           = 0;     -- Money gained this session
@@ -174,7 +171,6 @@ local StringToColour;                  -- Convert a string to a colour code
 local StripColour;                     -- Strip colour from text
 local TableSize;                       -- Return size of a keystring table
 local TriggerTimer;                    -- Trigger a created timer
-local GetActiveArtefactInfo;           -- Get active artefact info
 local UnitFrameUpdate;                 -- Update unit frame
 local UnitIsFriend;                    -- Specified unit is a friend
 local UpdateGroupTrackData;            -- Update group tracker data
@@ -1285,26 +1281,27 @@ EventsData = {
     local function Event()
       -- Ignore automation if shift pressed or automation setting is disabled
       if IsShiftKeyDown() then return end;
-      -- Get current options
+      -- Get current options, active and available quests
       local aOptions = funcGO();
-      -- If control is held down then we should just search for gossip options
+      local aActive = funcGACQ();
+      local aAvailable = funcGAVQ();
+      -- Get auto select options setting and if...
       local bAutoSelectOptions = SettingEnabled("autoslq")
-      if IsControlKeyDown() and bAutoSelectOptions then
-        -- Walk through each gossip option again
-        if #aOptions > 0 then
-          -- Select a random option
-          local aOption = aOptions[math.random(#aOptions)];
-          if aOption.status == 0 then
-            return funcSO(aOption.gossipOptionID);
-          end
+      if bAutoSelectOptions and            -- Setting is enabled? and
+         ((not IsControlKeyDown() and      -- Not control held?
+           #aActive + #aAvailable == 0 and -- No quests?
+           #aOptions == 1) or              -- Only one option? or
+          (IsControlKeyDown() and          -- Control held? and
+           #aOptions > 0)) then            -- More than one option?
+        -- Select a random option
+        local aOption = aOptions[math.random(#aOptions)];
+        if aOption.status == 0 then
+          return funcSO(aOption.gossipOptionID);
         end
-        -- Nothing found
-        Print("Could not find gossip option to automatically select.");
       end
       -- If auto-complete quests enabled?
       if SettingEnabled("autoqcm") then
         -- Get active quests and enumerate through them
-        local aActive = funcGACQ();
         for iIndex = 1, #aActive do
           -- Get active quest data and if autocomplete it if completed
           local aOption = aActive[iIndex];
@@ -1326,7 +1323,6 @@ EventsData = {
       -- If auto-accept quests enabled?
       if SettingEnabled("autoaaq") then
         -- Get available quest data and if there is some?
-        local aAvailable = funcGAVQ();
         if #aAvailable > 0 then
           -- Iterate through importance of available quests
           for iFuncIndex = 1, #aFunctions do
@@ -1931,10 +1927,10 @@ EventsData = {
       local bIsAutoTrack = SettingEnabled("autoswr");
       -- Advanced tracking is enabled?
       if SettingEnabled("advtrak") then
-        -- Remove 'Guild' reputation for now because then guild reputation
-        -- appears twice if we don't do this.
---        local aGuild = aNew.Guild;
---        if aGuild then aNew.Guild = nil end;
+        -- Remove 'Guild' reputation for now because then a reputation loss
+        -- for 'Guild' appears which is annoying.
+        local aGuild = aNew.Guild;
+        if aGuild then aNew.Guild = nil end;
         -- Enumerate through new data
         for sNFName, aNFData in pairs(aNew) do
           -- Get old faction data and if it exists?
@@ -2006,7 +2002,7 @@ EventsData = {
           end
         end
         -- Add guild data back
---        aNew.Guild = aGuild;
+        aNew.Guild = aGuild;
       end
       -- If we have auto track reputation enabled?
       if bIsAutoTrack then
@@ -2757,33 +2753,61 @@ EventsData = {
     Print(sMsg..")", ChatTypeInfo.MONEY);
   end,
   -- Artifact power updated --------------------------------------------------
-  ARTIFACT_XP_UPDATE = function()
-    -- Get new artefact data and return if not available
-    local iId, _, _, _, iXPTotal, iSpent, _, _, _, _, _, _, iTier =
-      C_ArtifactUI.GetEquippedArtifactInfo();
-    if not iId then return end;
-    -- Get xp info
-    local iPointsAvail, iXP, iXPNext =
-      ArtifactBarGetNumArtifactTraitsPurchasableFromXP(iSpent,
-        iXPTotal, iTier);
-    -- Set and cache total
-    iArtefactXPTotal = iXPTotal;
-    -- Done if not initialised yet
-    if not InitsData.Artefact then InitsData.Artefact = true return end;
-    -- Done Ii there was no change in artefact xp
-    -- Calculate and cache gain (or loss)
-    local iGain = iXPTotal - iXP;
-    iArtefactXPLast = iGain;
-    if iGain <= 0 then return end;
-    -- Prepare message
-    local sMsg = "Received "..FormatNumber(iGain)..
-      " AXP! ("..GetItemInfo(iId).."; "..
-      RoundNumber(iXP/iXPMax*100, 2).."%; Next: "..FormatNumber(iXPNext);
-    -- Calculate remaining count
-    local nLeft = iXPNext/iGain;
-    if nLeft > 0 then sMsg = sMsg.."; x"..FormatNumber(ceil(nLeft)) end;
-    -- Dispatch message
-    Print(sMsg..")", ChatTypeInfo.COMBAT_XP_GAIN);
+  ARTIFACT_XP_UPDATE = function(...)
+    -- Last item details
+    local iIdLast, iTotalLast;
+    -- Get tables and functions
+    local nsAI = C_AzeriteItem;
+    assert(type(nsAI)=="table");
+    local funcFAAI = nsAI.FindActiveAzeriteItem;
+    assert(type(funcFAAI)=="function");
+    local funcGAIXPI = nsAI.GetAzeriteItemXPInfo;
+    assert(type(funcGAIXPI)=="function");
+    local funcGPL = nsAI.GetPowerLevel;
+    -- Actual event
+    local function Event()
+      -- Find an active azerite item and return if not found
+      local aItemLoc = funcFAAI();
+      if not aItemLoc then return end;
+      -- Get equipped artefact data and return if none
+      local iAXP, iAXPMax = funcGAIXPI(aItemLoc);
+      if not iAXP then return end;
+      -- Get level and return if none
+      local iLevel = funcGPL(aItemLoc);
+      if not iLevel then return end;
+      -- Get name of item
+      local aIData = Item:CreateFromItemLocation(aItemLoc);
+      if not aIData then return end;
+      -- If is new item
+      local iId = aIData:GetItemID();
+      if not iId then return end;
+      -- Caluclate XP total;
+      local iTotal = (iAXPMax * iLevel) + iAXP;
+      -- Is same item from last?
+      if iId == iIdLast then
+        -- Calculations
+        local nPercent = iAXP / iAXPMax * 100;
+        local iGain = iTotal - iTotalLast;
+        if iGain ~= 0 then
+          local iNext = iAXPMax - iAXP;
+          -- Prepare message
+          local sMsg = "Received "..FormatNumber(iGain)..
+            " AXP! ("..GetItemInfo(iId).."; "..RoundNumber(nPercent, 2)..
+            "%; Next: "..FormatNumber(iNext);
+          -- Calculate remaining count
+          local iLeft = ceil(iNext / iGain);
+          if iLeft > 0 then sMsg = sMsg.."; x"..FormatNumber(iLeft) end;
+          -- Dispatch message
+          Print(sMsg..")", ChatTypeInfo.COMBAT_XP_GAIN);
+        end
+      end
+      -- Set new id and xp values
+      iIdLast = iId;
+      iTotalLast = iTotal;
+    end
+    -- Set and call actual function for first time
+    EventsData.ARTIFACT_XP_UPDATE = Event;
+    Event(...);
   end,
   -- Player experience updated -----------------------------------------------
   PLAYER_XP_UPDATE = function()
@@ -2978,7 +3002,7 @@ EventsData = {
           -- Print message to chat
           Print(sWhat.." currency "..sLink..iValue.." (Total: "..
             BreakUpLargeNumbers(iNCount)..")",
-            ChatTypeInfo["CURRENCY"]);
+            ChatTypeInfo.CURRENCY);
         end
       end
       -- Store new data
@@ -3123,7 +3147,7 @@ EventsData = {
           if sSType and sSType ~= "Other" then
             sMsg = sMsg.."; Type: "..sSType;
           elseif sType then sMsg = sMsg.."; Type: "..sType end
-          Print(sMsg..")", ChatTypeInfo["LOOT"]);
+          Print(sMsg..")", ChatTypeInfo.LOOT);
           iQuantity = mhtrack[sName];
           if iQuantity then
             sMsg = "[Tracker]"..sLink;
@@ -3183,9 +3207,9 @@ EventsData = {
           -- Build string with extended information if we have it
           if #aParts > 0 then
             Print(sMsg.."! ("..strjoin("; ", unpack(aParts))..")",
-              ChatTypeInfo["LOOT"]);
+              ChatTypeInfo.LOOT);
           -- Basic information (impossible I think but just incase)
-          else Print(sMsg.."!", ChatTypeInfo["LOOT"]) end;
+          else Print(sMsg.."!", ChatTypeInfo.LOOT) end;
         end
       end
     -- Now initialised
@@ -3351,6 +3375,8 @@ UnitEventsData = {
   end,
   -- Player inventory has changed ---------------------------------------------
   UNIT_INVENTORY_CHANGED = function()
+    -- Update artefact XP
+    EventsData.ARTIFACT_XP_UPDATE();
     -- Level not initialised?
     if iItemLevel == -1 then
       -- Get item level, set it and return
@@ -3699,7 +3725,7 @@ local ChatEventsData =                 -- Chat event hooks
       _, _, MsgId, _)
     if not SettingEnabled("blockrw") then
       RaidNotice_AddMessage(RaidWarningFrame, Msg,
-        ChatTypeInfo["RAID_WARNING"]);
+        ChatTypeInfo.RAID_WARNING);
       PlaySound(SOUNDKIT.RAID_WARNING);
     end
     return MakePrettyName("RAID_WARNING", Msg, User, Lang, Chan, Flag, MsgId);
@@ -5807,37 +5833,6 @@ FunctionHookData = {
     end
     Log(Type, Msg, User);
   end,
-  -- -------------------------------------------------------------------------
---[[ FIXME
-  MainMenuBar_ArtifactUpdateOverlayFrameText = function(Self)
-    -- Done if no tracking enabled
-    if not SettingEnabled("advtrak") then return end;
-    if 1 then return end; -- FIXME
-    -- Get alias to frame since we're using it more than once and just return
-    -- if it is not showing.
-    local oFrame = ArtifactWatchBar.OverlayFrame.Text;
-    if not oFrame then return end;
-    -- Get current artefact (cached)
-    local sName = sArtifactName;
-    if not sName then return end;
-    -- Get other data
-    local iXP, iMax, iNX, iAvailable, iTotal = iArtifactXP, iArtifactXPMax,
-      iArtifactXPNext, iArtifactAvailable, iArtefactXPTotal;
-    -- Calculate percentage
-    local LPercent = iXP/iMax*100;
-    -- Start building bar text
-    local sText = sName..": "..OneOrBoth(iXP, iMax)..
-      " ("..RoundNumber(LPercent, 2).."%); NX="..FormatNumber(iNX);
-    -- Add number to level
-    local iLast = iXPLastGain;
-    if iLast then sText = sText.." (x"..(ceil(iMax/iLast))..")" end;
-    -- Add unspent levels
-    sText = sText.."; US="..FormatNumber(iTotal);
-    if iAvailable > 0 then sText = sText.." (x"..iAvailable..")" end;
-    -- Set the text
-    ProcessTextString(oFrame, LPercent, sText);
-  end,
---]]
   -- --------------------------------------------------------------------------
 --[[ FIXME
   BagSlotButton_OnDrag = function(Self)
@@ -8467,36 +8462,6 @@ GetDurability = function()
   return iTotalCurrent, iTotalMaximum, iTotalCurrent/iTotalMaximum*100
 end
 -- ===========================================================================
-GetActiveArtefactInfo = function()
-  -- Get equipped artefact data and return if none
-  local aData = C_ArtifactUI.GetEquippedArtifactInfo();
-  if not aData then return end;
-  -- Get parts
-  local iId, sName, iXP, iSpent, iTier =
-    aData.itemId, aData.name, aData.xp, aData.pointsSpent, aData.tier;
-  -- Alias function callback
-  local fFunc = C_ArtifactUI.GetCostForPointAtRank;
-  -- Points available to spend
-  local iAvailable = 0;
-  -- Function to calculate cost (used twice)
-  local function C() return fFunc(iSpent + iAvailable, iTier) or 0 end;
-  -- Maximum artefact power
-  local iMax = C();
-  -- Save total xp
-  local iTotalXP = iXP;
-  -- Until we've reached the current level
-  while iXP >= iMax and iMax > 0 do
-    -- Decrement from current XP value
-    iXP = iXP - iMax
-    -- Point available
-    iAvailable = iAvailable + 1
-    -- Get new max value
-    iMax = C();
-  end
-  -- Return components calculated
-  return sName, iXP, iMax, iMax-iXP, iAvailable, iTotalXP;
-end
--- ===========================================================================
 FormatNumber = function(iNum)
   local sSuffix;
   if iNum > 1000000000000 then iNum, sSuffix = iNum/1000000000, " B";
@@ -9569,10 +9534,10 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     end
     -- Honour bar text was modified
     local function HonourBarModified(oText)
-      local Text = "HXP="..BreakUpLargeNumbers(iHonour).."/"..
+      local Text = "Honor: "..BreakUpLargeNumbers(iHonour).."/"..
         FormatNumber(iHonourMax)..
-        " ("..RoundNumber(iHonour/iHonourMax*100, 2).."%); LV="..iHonourLevel..
-        "; NX="..FormatNumber(iHonourMax-iHonour);
+        " ("..RoundNumber(iHonour/iHonourMax*100, 2).."%); Level "..
+        iHonourLevel.."; Next: "..FormatNumber(iHonourMax-iHonour);
       if iHonourGainsLeft >= 1 and iHonourGainsLeft < 1000 then
         Text = Text.." (x"..ceil(iHonourGainsLeft)..")";
       end
@@ -9583,7 +9548,7 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       -- Build new text string
       local sText = "XP="..BreakUpLargeNumbers(iCurrentXP).."/"..
         FormatNumber(iXPMax)..
-        " ("..RoundNumber(iCurrentXP/iXPMax*100, 2).."%); NX="..
+        " ("..RoundNumber(iCurrentXP/iXPMax*100, 2).."%); Next: "..
         FormatNumber(iXPMax-iCurrentXP);
       -- Add gains remaining
       if iXPGainsLeft >= 1 and iXPGainsLeft < 1000 then
@@ -9599,15 +9564,24 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
     end
     -- Artefact bar text was modified
     local function ArtefactBarModified(oText)
-      -- Get new artefact data
-      local sName, iXP, iMax, iNX, iAvail, iTotal = GetActiveArtefactInfo();
-      if not sName then return end;
+      -- Find an active azerite item and return if not found
+      local aItemLoc = C_AzeriteItem.FindActiveAzeriteItem();
+      if not aItemLoc then return end;
+      -- Get equipped artefact data and return if none
+      local iAXP, iAXPMax = C_AzeriteItem.GetAzeriteItemXPInfo(aItemLoc);
+      if not iAXP then return end;
+      -- Get name of item
+      local aIData = Item:CreateFromItemLocation(aItemLoc);
+      if not aIData then return end;
+      -- Get level and return if none
+      local iLevel = C_AzeriteItem.GetPowerLevel(aItemLoc);
+      if not iLevel then return end;
       -- Calculate percent
-      local nPercent = iXP / iMax * 100;
+      local nPercent = iAXP / iAXPMax * 100;
       -- Set the new text string
-      ProcessTextString(oText, nPercent, sName.."; ".."AXP="..
-        FormatNumber(iXP).."/"..FormatNumber(iXPMax).."("..
-        RoundNumber(nPercent, 2).."%); NX="..FormatNumber(iXPNext));
+      ProcessTextString(oText, nPercent, aIData:GetItemName().." (Lv."..
+        iLevel.."); "..FormatNumber(iAXP).."/"..FormatNumber(iAXPMax).." ("..
+        RoundNumber(nPercent, 2).."%); Next: "..FormatNumber(iAXPMax - iAXP));
     end
     -- For each container (e.g. 1,4+2,1 = XP+Rep Bar)
     local aContainers = StatusTrackingBarManager.barContainers;
@@ -9635,9 +9609,13 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       -- Get artefact bar and hook the event function
       local ArtefactBar = aContainer.bars[5];
       local ArtefactBarText = ArtefactBar.OverlayFrame.Text;
+      hooksecurefunc(ArtefactBar, "UpdateOverlayFrameText", function()
+        if not SettingEnabled("advtrak") then return end;
+        ArtefactBarModified(ArtefactBarText) end);
       hooksecurefunc(ArtefactBar, "SetBarText", function()
         if not SettingEnabled("advtrak") then return end;
-        XPBarModified(ArtefactBarText) end);
+        ArtefactBarModified(ArtefactBarText) end);
+      ArtefactBar:ShowText();
     end
   end,
   -- Action bars ----------------------------------------------------------- --
