@@ -4,7 +4,7 @@
 local sEmpty                  = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 21,             Extra = sEmpty,
+  Release     = 22,             Extra = sEmpty,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
@@ -974,75 +974,74 @@ EventsData = {
     Print("Automatically accepted role as "..sMsg.."!");
     LFDRoleCheckPopupAccept_OnClick();
   end,
+  -- Trainer was closed ------------------------------------------------------
+  TRAINER_CLOSED = function()
+    -- Kill auto train timer
+    KillTimer("ATRA");
+  end,
   -- A trainer was shown -----------------------------------------------------
   TRAINER_SHOW = function()
-    -- Done if auto-learn is disabled
-    if not SettingEnabled("autotra") then return end;
-    -- If there is nothing to learn?
-    local iCount = GetNumTrainerServices();
-    if iCount <= 0 then
-      -- ...and shift key isn't pressed then just close the trainer
-      if not IsShiftKeyDown() then CloseTrainer() end;
-      -- ...and echo in the chat box
-      return Print("You cannot learn anything from this trainer");
-    end
-    -- Store current players money and make some counters for results
-    local iAvail, iBought, iMoney, iSpent = 0, 0, iMoney, 0;
-    -- Iterate through each purchase
-    for iIndex = 1, iCount do
-      -- Get purcase info and if the purchase is available?
-      local sName, sType = GetTrainerServiceInfo(iIndex);
-      if sType and #sType > 0 and sType == "available" then
-        -- Incrememnt number of available services
-        iAvail = iAvail + 1;
-        -- Get cost of purchase
-        local iCost = GetTrainerServiceCost(iIndex);
-        -- Ignore riding options since they're VERY expensive
-        if sName:find(" Riding") then
-          return Print("Auto-purchasing of riding skills ignored");
-        -- Do NOT do anything if the player hasn't specialised in the
-        -- profession yet because player might not want this.
-        elseif sName:find("Apprentice ") then
-          return Print("You have not specialised in this profession");
-        -- Player can afford it?
-        elseif iCost <= iMoney then
-          -- Increment money spent and items bought and decrement money left
-          iSpent = iSpent + iCost;
-          iMoney = iMoney - iCost;
-          iBought = iBought + 1;
-          -- Build auto-purchase message and echo it out
-          local sExtra;
-          if not sSubName or #sSubName <= 0 then sExtra = sEmpty;
-          else sExtra = " ("..sSubName..")" end;
-          Print("Auto-purchasing '"..sName..sExtra.."' for "..
-            MakeMoneyReadable(iCost), ChatTypeInfo.MONEY);
-          -- Purchase the item automatically.
-          BuyTrainerService(iIndex);
-        -- Player can't afford this purchase
-        else
-          -- Add sub name if there is one
-          local sExtra;
-          if not sSubName or #sSubName <= 0 then sExtra = sEmpty;
-          else sExtra = " ("..sSubName..")" end;
-          Print("You cannot afford to purchase '"..sName..sExtra.."' for "..
-            MakeMoneyReadable(iCost));
+    -- Done if auto-learn is disabled or shift key pressed
+    if not SettingEnabled("autotra") or IsShiftKeyDown() then return end;
+    -- When the dialog is open the list isn't ready yet so wait until the
+    -- server gives us the list. We will check at most ten times to see if
+    -- there is a list.
+    CreateTimer(0.1, function()
+      -- Return if nothing yet
+      local iCount = GetNumTrainerServices();
+      if iCount <= 0 then return end;
+      -- Store current players money and make some counters for results
+      local iAvail, iBought, iMoney, iSpent = 0, 0, iMoney, 0;
+      -- Iterate through each purchase
+      for iIndex = 1, iCount do
+        -- Get purcase info and if the purchase is available?
+        local sName, sType = GetTrainerServiceInfo(iIndex);
+        if sType and #sType > 0 and sType == "available" then
+          -- Incrememnt number of available services
+          iAvail = iAvail + 1;
+          -- Get cost of purchase
+          local iCost = GetTrainerServiceCost(iIndex);
+          -- Do NOT do anything if the player hasn't specialised in the
+          -- profession yet because player might not want this.
+          if sName:find("Apprentice ") then
+            return Print("You have not specialised in this profession");
+          -- Player can afford it?
+          elseif iCost <= iMoney then
+            -- Increment money spent and items bought and decrement money left
+            iSpent = iSpent + iCost;
+            iMoney = iMoney - iCost;
+            iBought = iBought + 1;
+            -- Build auto-purchase message and echo it out
+            local sExtra;
+            if not sSubName or #sSubName <= 0 then sExtra = sEmpty;
+            else sExtra = " ("..sSubName..")" end;
+            Print("Auto-purchasing '"..sName..sExtra.."' for "..
+              MakeMoneyReadable(iCost), ChatTypeInfo.MONEY);
+            -- Purchase the item automatically.
+            BuyTrainerService(iIndex);
+          -- Player can't afford this purchase
+          else
+            -- Add sub name if there is one
+            local sExtra;
+            if not sSubName or #sSubName <= 0 then sExtra = sEmpty;
+            else sExtra = " ("..sSubName..")" end;
+            Print("You cannot afford to purchase '"..sName..sExtra.."' for "..
+              MakeMoneyReadable(iCost));
+          end
         end
       end
-    end
-    -- We did not find any new purchases?
-    if iAvail == 0 then Print("No new purchases available from this trainer!");
-    -- Else there were some items available...
-    else
-      -- ...so lets report what the automation process did
-      local Msg = "There were "..iBought.." of "..iAvail.." purchases made ";
-      if iSpent > 0 then Msg = Msg.."totalling "..MakeMoneyReadable(iSpent);
-                    else Msg = Msg.."and no money spent" end;
-      Print(Msg, ChatTypeInfo.MONEY);
-    end
-    -- When we are done we automatically close the dialog as everything we did
-    -- was already sent to the chat, unless user holds SHIFT to keep the dialog
-    -- open.
-    if not IsShiftKeyDown() then CloseTrainer() end;
+      -- We found any new purchases?
+      if iAvail >= 0 then
+        -- Lets report what the automation process did
+        local Msg = "There were "..iBought.." of "..iAvail.." purchases made ";
+        if iSpent > 0 then Msg = Msg.."totalling "..MakeMoneyReadable(iSpent);
+                      else Msg = Msg.."and no money spent" end;
+        Print(Msg, ChatTypeInfo.MONEY);
+      -- Nothing new found?
+      else Print("No new purchases available from this trainer!") end;
+      -- When we are done so kill the timer
+      return true;
+    end, 50, "ATRA", true);
   end,
   -- A duel has finished -----------------------------------------------------
   DUEL_FINISHED = function() bInDuel = false end,
@@ -1730,73 +1729,65 @@ EventsData = {
     PlaySoundFile("Sound/Interface/AuctionWindowOpen.wav");
   end,
   -- The mechant dialog was opened -------------------------------------------
-  MERCHANT_SHOW = function()
-    -- Return if shift key pressed
-    if IsShiftKeyDown() then return end;
-    -- If autosell enabled?
-    if SettingEnabled("autosel") then
-      -- Number of items sold
-      local iTotalItems, iTotalMoney = 0, 0;
-      -- Create looping timer to constantly sell items until none left because
-      -- Blizzard is throttling UseContainerItem
-      CreateTimer(0.5, function()
-        -- Iterate through all the bags and slots
-        for iBagId, aBagData in pairs(BagsData) do
-          for iSlotId, aSlotData in pairs(aBagData) do
-            -- Sell if poor quality
-            if aSlotData.quality == 0 then
-              -- Get price and if worth something?
-              local _, _, _, _, _, _, _, _, _, _, iPrice =
-                GetItemInfo(aSlotData.hyperlink);
-              if iPrice > 0 then
-                -- Sell and print
-                C_Container.UseContainerItem(iBagId, iSlotId);
-                Print("Automatically sold "..aSlotData.hyperlink.." for "..
-                  MakeMoneyReadable(iPrice));
-                -- If we've sold 5 items then wait for next iteration
-                iTotalMoney = iTotalMoney + iPrice;
-                iTotalItems = iTotalItems + 1;
-              end
-            end
+  MERCHANT_SHOW = function(...)
+    -- Tables and functions
+    local nsC = C_MerchantFrame;
+    assert(type(nsC)=="table");
+    local funcISAJE = nsC.IsSellAllJunkEnabled;
+    assert(type(funcISAJE)=="function");
+    local funcGNJI = nsC.GetNumJunkItems;
+    assert(type(funcGNJI)=="function");
+    local funcSAJE = nsC.SellAllJunkItems;
+    assert(type(funcISAJE)=="function");
+    -- Repair id
+    local iSfxRepairId = SOUNDKIT.ITEM_REPAIR;
+    -- Actual event function
+    local function Event()
+      -- Return if shift key pressed
+      if IsShiftKeyDown() then return end;
+      -- If auto-repair enabled? Try to repair
+      if SettingEnabled("autorep") then
+        -- Get repair cost and if we can repair, and if we can repair?
+        local iRepairCost, bCanRepair = GetRepairAllCost();
+        if bCanRepair then
+          -- If repair with guild bank enabled?
+          if SettingEnabled("autorpg") and CanGuildBankRepair() then
+            -- Repair items with guild bank and tell user
+            RepairAllItems(true);
+            PlaySound(SOUNDKIT.ITEM_REPAIR);
+            return Print("Automatically repairing equipment with guild bank "..
+              "for "..MakeMoneyReadable(iRepairCost));
           end
-        end
-        -- Add to total
-        if iTotalItems > 1 then
-          Print("Automatically sold "..iTotalItems.." items for "..
-            MakeMoneyReadable(iTotalMoney));
-        end
-        -- No more items killed so kill looping timer
-        return true;
-      end, nil, "AutoSell", true);
-    end
-    -- If autorepair enabled?
-    if SettingEnabled("autorep") then
-      -- Get repair cost and if we can repair, and if we can repair?
-      local iRepairCost, bCanRepair = GetRepairAllCost();
-      if bCanRepair then
-        -- If repair with guild bank enabled?
-        if SettingEnabled("autorpg") and CanGuildBankRepair() then
-          -- Repair items with guild bank and tell user
+          -- Repair with own funds
+          RepairAllItems();
+          PlaySound(iSfxRepairId);
+          Print("Automatically repairing equipment for "..
+            MakeMoneyReadable(iRepairCost));
+        -- Cannot repair with own funds but can we repair with guild bank?
+        elseif CanGuildBankRepair() and SettingEnabled("autorgf") then
+          -- Do repair with guild bank instead and tell user
           RepairAllItems(true);
-          PlaySound(SOUNDKIT.ITEM_REPAIR);
-          return Print("Automatically repairing equipment with guild bank "..
-            "for "..MakeMoneyReadable(iRepairCost));
+          PlaySound(iSfxRepairId);
+          Print("Unable to automatically repair items with own funds but "..
+            "repairing equipment with guild bank for "..
+              MakeMoneyReadable(iRepairCost).." instead");
         end
-        -- Repair with own funds
-        RepairAllItems();
-        PlaySound(SOUNDKIT.ITEM_REPAIR);
-        Print("Automatically repairing equipment for "..
-          MakeMoneyReadable(iRepairCost));
-      -- Cannot repair with own funds but can we repair with guild bank?
-      elseif CanGuildBankRepair() and SettingEnabled("autorgf") then
-        -- Do repair with guild bank instead and tell user
-        RepairAllItems(true);
-        PlaySound(SOUNDKIT.ITEM_REPAIR);
-        Print("Unable to automatically repair items with own funds but "..
-          "repairing equipment with guild bank for "..
-            MakeMoneyReadable(iRepairCost).." instead");
+      end
+      -- If auto-sell trash enabled then find items to sell
+      if SettingEnabled("autosel") and funcISAJE() then
+        -- Get number of junk items to sell and if there are any?
+        local iCount = funcGNJI();
+        if iCount > 0 then
+          -- Sell them all
+          funcSAJE();
+          -- Report that we're selling them all
+          Print("Selling "..iCount.." trash items to the vendor...");
+        end
       end
     end
+    -- Set actual event function and call it for first time
+    EventsData.MERCHANT_SHOW = Event;
+    Event(...);
   end,
   -- The faction log was updated ---------------------------------------------
   UPDATE_FACTION = function(...)
@@ -2032,10 +2023,9 @@ EventsData = {
     fcbEnabled(...);
   end,
   -- An auto-complete quest was completed ------------------------------------
-  QUEST_AUTOCOMPLETE = function(QuestID)
+  QUEST_AUTOCOMPLETE = function(iQuestID)
     -- Return if setting isn't enabled for auto quest complete
-    if not SettingEnabled("autoqcm") then return end;
-    assert(type(iQuestID)=="number");
+    if not QuestId or not SettingEnabled("autoqcm") then return end;
     -- Get and check data for requested quest id
     local aQData = aQuestData[QuestID];
     assert(type(aQData)=="table");
@@ -9615,7 +9605,6 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
       hooksecurefunc(ArtefactBar, "SetBarText", function()
         if not SettingEnabled("advtrak") then return end;
         ArtefactBarModified(ArtefactBarText) end);
-      ArtefactBar:ShowText();
     end
   end,
   -- Action bars ----------------------------------------------------------- --
