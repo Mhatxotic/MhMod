@@ -4,7 +4,7 @@
 local sEmpty                  = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 22,             Extra = sEmpty,
+  Release     = 23,             Extra = sEmpty,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
@@ -984,64 +984,24 @@ EventsData = {
     -- Done if auto-learn is disabled or shift key pressed
     if not SettingEnabled("autotra") or IsShiftKeyDown() then return end;
     -- When the dialog is open the list isn't ready yet so wait until the
-    -- server gives us the list. We will check at most ten times to see if
-    -- there is a list.
-    CreateTimer(0.1, function()
-      -- Return if nothing yet
-      local iCount = GetNumTrainerServices();
-      if iCount <= 0 then return end;
-      -- Store current players money and make some counters for results
-      local iAvail, iBought, iMoney, iSpent = 0, 0, iMoney, 0;
+    -- server gives us the list.
+    CreateTimer(0.5, function()
+      -- Turn timer off if auto-learn is disabled or shift key pressed
+      if not SettingEnabled("autotra") or
+             IsShiftKeyDown() then return true end;
       -- Iterate through each purchase
-      for iIndex = 1, iCount do
-        -- Get purcase info and if the purchase is available?
+      for iIndex = 1, GetNumTrainerServices() do
+        -- Get purchase info and if the purchase is available and can afford?
         local sName, sType = GetTrainerServiceInfo(iIndex);
-        if sType and #sType > 0 and sType == "available" then
-          -- Incrememnt number of available services
-          iAvail = iAvail + 1;
-          -- Get cost of purchase
-          local iCost = GetTrainerServiceCost(iIndex);
-          -- Do NOT do anything if the player hasn't specialised in the
-          -- profession yet because player might not want this.
-          if sName:find("Apprentice ") then
-            return Print("You have not specialised in this profession");
-          -- Player can afford it?
-          elseif iCost <= iMoney then
-            -- Increment money spent and items bought and decrement money left
-            iSpent = iSpent + iCost;
-            iMoney = iMoney - iCost;
-            iBought = iBought + 1;
-            -- Build auto-purchase message and echo it out
-            local sExtra;
-            if not sSubName or #sSubName <= 0 then sExtra = sEmpty;
-            else sExtra = " ("..sSubName..")" end;
-            Print("Auto-purchasing '"..sName..sExtra.."' for "..
-              MakeMoneyReadable(iCost), ChatTypeInfo.MONEY);
-            -- Purchase the item automatically.
-            BuyTrainerService(iIndex);
-          -- Player can't afford this purchase
-          else
-            -- Add sub name if there is one
-            local sExtra;
-            if not sSubName or #sSubName <= 0 then sExtra = sEmpty;
-            else sExtra = " ("..sSubName..")" end;
-            Print("You cannot afford to purchase '"..sName..sExtra.."' for "..
-              MakeMoneyReadable(iCost));
-          end
+        if sType and #sType > 0 and
+           sType == "available" and
+           GetTrainerServiceCost(iIndex) <= iMoney then
+          -- Purchase this one and return
+          return BuyTrainerService(iIndex);
         end
       end
-      -- We found any new purchases?
-      if iAvail >= 0 then
-        -- Lets report what the automation process did
-        local Msg = "There were "..iBought.." of "..iAvail.." purchases made ";
-        if iSpent > 0 then Msg = Msg.."totalling "..MakeMoneyReadable(iSpent);
-                      else Msg = Msg.."and no money spent" end;
-        Print(Msg, ChatTypeInfo.MONEY);
-      -- Nothing new found?
-      else Print("No new purchases available from this trainer!") end;
-      -- When we are done so kill the timer
-      return true;
-    end, 50, "ATRA", true);
+      -- We keep the timer running to purchase any new services
+    end, nil, "ATRA", true);
   end,
   -- A duel has finished -----------------------------------------------------
   DUEL_FINISHED = function() bInDuel = false end,
@@ -1739,8 +1699,9 @@ EventsData = {
     assert(type(funcGNJI)=="function");
     local funcSAJE = nsC.SellAllJunkItems;
     assert(type(funcISAJE)=="function");
-    -- Repair id
+    -- Repair id and colour
     local iSfxRepairId = SOUNDKIT.ITEM_REPAIR;
+    local aColMoney = ChatTypeInfo.MONEY;
     -- Actual event function
     local function Event()
       -- Return if shift key pressed
@@ -1756,13 +1717,13 @@ EventsData = {
             RepairAllItems(true);
             PlaySound(SOUNDKIT.ITEM_REPAIR);
             return Print("Automatically repairing equipment with guild bank "..
-              "for "..MakeMoneyReadable(iRepairCost));
+              "for "..MakeMoneyReadable(iRepairCost), aColMoney);
           end
           -- Repair with own funds
           RepairAllItems();
           PlaySound(iSfxRepairId);
           Print("Automatically repairing equipment for "..
-            MakeMoneyReadable(iRepairCost));
+            MakeMoneyReadable(iRepairCost), aColMoney);
         -- Cannot repair with own funds but can we repair with guild bank?
         elseif CanGuildBankRepair() and SettingEnabled("autorgf") then
           -- Do repair with guild bank instead and tell user
@@ -1770,7 +1731,7 @@ EventsData = {
           PlaySound(iSfxRepairId);
           Print("Unable to automatically repair items with own funds but "..
             "repairing equipment with guild bank for "..
-              MakeMoneyReadable(iRepairCost).." instead");
+              MakeMoneyReadable(iRepairCost).." instead", aColMoney);
         end
       end
       -- If auto-sell trash enabled then find items to sell
@@ -1781,7 +1742,8 @@ EventsData = {
           -- Sell them all
           funcSAJE();
           -- Report that we're selling them all
-          Print("Selling "..iCount.." trash items to the vendor...");
+          Print("Selling "..iCount.." trash items to the vendor...",
+            aColMoney);
         end
       end
     end
@@ -2025,10 +1987,10 @@ EventsData = {
   -- An auto-complete quest was completed ------------------------------------
   QUEST_AUTOCOMPLETE = function(iQuestID)
     -- Return if setting isn't enabled for auto quest complete
-    if not QuestId or not SettingEnabled("autoqcm") then return end;
+    if not iQuestId or not SettingEnabled("autoqcm") then return end;
     -- Get and check data for requested quest id
-    local aQData = aQuestData[QuestID];
-    assert(type(aQData)=="table");
+    local aQData = QuestData[iQuestID];
+    if not aQData then return end;
     -- Automatically complete the uest
     ShowQuestComplete(aQData.N);
   end,
