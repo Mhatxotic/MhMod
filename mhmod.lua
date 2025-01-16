@@ -4,7 +4,7 @@
 local sEmpty                  = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 23,             Extra = sEmpty,
+  Release     = 24,             Extra = sEmpty,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
@@ -3412,20 +3412,34 @@ UnitEventsData = {
   end,
   -----------------------------------------------------------------------------
   UNIT_POWER_UPDATE = function()
-    if nCombatTime == 0 or bInDuel or not SettingEnabled("autoalm") or
-      UnitPowerType("player") ~= 0 or UnitIsDeadOrGhost("player") or
-      (UnitMana("player")/UnitManaMax("player"))*100 >=
-        GetDynSetting("dlmt") or
-      GetTime() <= bLowMana or not GetNearestUnit() then return end;
+    if nCombatTime == 0 or
+       bInDuel or
+       not SettingEnabled("autoalm") or
+       UnitPowerType("player") ~= 0 or
+       UnitIsDeadOrGhost("player") or
+       (UnitPower("player", 0)/UnitPowerMax("player", 0))*100 >
+         GetDynSetting("dlmt") or
+       GetTime() <= bLowMana or
+       not GetNearestUnit() then return end;
     DoEmote("oom");
     bLowMana = GetTime() + GetDynSetting("dlswi");
-  end },
+  end
   -----------------------------------------------------------------------------
-  party1 = { UNIT_TARGET = function() UnitFrameUpdate(PartyMemberFrame1) end },
-  party2 = { UNIT_TARGET = function() UnitFrameUpdate(PartyMemberFrame2) end },
-  party3 = { UNIT_TARGET = function() UnitFrameUpdate(PartyMemberFrame3) end },
-  party4 = { UNIT_TARGET = function() UnitFrameUpdate(PartyMemberFrame4) end },
-  target = { UNIT_TARGET = function() UnitFrameUpdate(TargetFrameToT) end },
+  }, party1 = {
+    UNIT_TARGET = function() UnitFrameUpdate(PartyMember.MemberFrame1) end
+  -----------------------------------------------------------------------------
+  }, party2 = {
+    UNIT_TARGET = function() UnitFrameUpdate(PartyMember.MemberFrame2) end
+  -----------------------------------------------------------------------------
+  }, party3 = {
+    UNIT_TARGET = function() UnitFrameUpdate(PartyMember.MemberFrame3) end
+  -----------------------------------------------------------------------------
+  }, party4 = {
+    UNIT_TARGET = function() UnitFrameUpdate(PartyMember.MemberFrame4) end
+  -----------------------------------------------------------------------------
+  }, target = {
+    UNIT_TARGET = function() UnitFrameUpdate(TargetFrameToT) end
+  },
   -----------------------------------------------------------------------------
 };
 -- == Chat frame hook events =================================================
@@ -4384,8 +4398,8 @@ LocalCommandsData = {
             if Unit ~= ThisUnit then return end;
             local ThisOwner = "party"..Self:GetID();
             if UnitInVehicle(ThisOwner) then ThisUnit = ThisOwner end;
-            Self:SetMinMaxValues(1, UnitManaMax(ThisUnit));
-            Self:SetValue(UnitMana(ThisUnit));
+            Self:SetMinMaxValues(1, UnitPowerMax(ThisUnit, 0));
+            Self:SetValue(UnitPower(ThisUnit, 0));
             local ManaColour = PowerBarColor[UnitPowerType(ThisUnit)];
             Self:SetStatusBarColor(ManaColour.r, ManaColour.g, ManaColour.b);
           end
@@ -4402,8 +4416,8 @@ LocalCommandsData = {
           Frame:Hide();
         end
         for _, oFrame in ipairs({
-          PartyMemberFrame1PetFrame, PartyMemberFrame2PetFrame,
-          PartyMemberFrame3PetFrame, PartyMemberFrame4PetFrame
+          PartyFrame.MemberFrame1.PetFrame, PartyFrame.MemberFrame2.PetFrame,
+          PartyFrame.MemberFrame3.PetFrame, PartyFrame.MemberFrame4.PetFrame
         }) do InitPartyMemberPetFrame(oFrame) end;
       end
       -- Function to call when updating party member nameplates
@@ -4427,18 +4441,18 @@ LocalCommandsData = {
       end
       -- For each unitframe we're enhancing
       for Unit, Data in pairs({
-        player       = { PlayerFrame,               false },
-        pet          = { PetFrame,                  false },
-        target       = { TargetFrame,               false },
-        targettarget = { TargetFrameToT,            false },
--- FIXME        party1       = { PartyMemberFrame1,         SetTargetNameText },
--- FIXME        partypet1    = { PartyMemberFrame1PetFrame, false },
--- FIXME        party2       = { PartyMemberFrame2,         SetTargetNameText },
--- FIXME        partypet2    = { PartyMemberFrame2PetFrame, false },
--- FIXME        party3       = { PartyMemberFrame3,         SetTargetNameText },
--- FIXME        partypet3    = { PartyMemberFrame3PetFrame, false },
--- FIXME        party4       = { PartyMemberFrame4,         SetTargetNameText },
--- FIXME        partypet4    = { PartyMemberFrame4PetFrame, false }
+        player       = { PlayerFrame,                      false },
+        pet          = { PetFrame,                         false },
+        target       = { TargetFrame,                      false },
+        targettarget = { TargetFrameToT,                   false },
+        party1       = { PartyFrame.MemberFrame1,          SetTargetNameText },
+        partypet1    = { PartyFrame.MemberFrame1.PetFrame, false },
+        party2       = { PartyFrame.MemberFrame2,          SetTargetNameText },
+        partypet2    = { PartyFrame.MemberFrame2.PetFrame, false },
+        party3       = { PartyFrame.MemberFrame3,          SetTargetNameText },
+        partypet3    = { PartyFrame.MemberFrame3.PetFrame, false },
+        party4       = { PartyFrame.MemberFrame4,          SetTargetNameText },
+        partypet4    = { PartyFrame.MemberFrame4.PetFrame, false }
       }) do
         -- Get frame name for unit and optional update callback function
         local Frame, Function = Data[1], Data[2];
@@ -4532,11 +4546,7 @@ LocalCommandsData = {
           if Type == "Health" then
             Current = UnitHealth(Unit);
             Maximum = UnitHealthMax(Unit);
-          elseif Type == "AlternateMana" then
-            Current = UnitMana(Unit);
-            Maximum = UnitManaMax(Unit);
-            Type = PowerTypes[Self.powerType or 0];
-          elseif Type == "Mana" then
+          elseif Type == "Mana" or Type == "AlternateMana" then
             Type = (Self.FeedbackFrame or Self).powerType or 0;
             Current = UnitPower(Unit, Type);
             Maximum = UnitPowerMax(Unit, Type);
@@ -5455,7 +5465,7 @@ LocalCommandsData = {
   end,
   rund = function(String)
     if not String or #String <= 0 then
-      return ShowInput("Enter LUA string to evaluate", "run");
+      return ShowInput("Enter LUA string to evaluate", "rund");
     end
     RunScript("MhMod.O={"..String.."}");
     DebugTable(MhMod.O, String);
@@ -9143,11 +9153,11 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
           if not ClassColour then ClassColour = { r=0,g=0,b=0 } end;
           GameTooltipStatusBar:SetStatusBarColor(ClassColour.r+.15,
             ClassColour.g+.15, ClassColour.b+.15);
-          local ManaMax = UnitPowerMax(sUnit);
+          local ManaMax = UnitPowerMax(sUnit, 0);
           if ManaMax <= 1 then
             TooltipManaBar:Hide();
           else
-            local Mana = UnitPower(sUnit);
+            local Mana = UnitPower(sUnit, 0);
             local ManaPerc = (Mana/ManaMax)*100;
             TooltipManaBar:SetMinMaxValues(1, ManaMax);
             TooltipManaBar:SetValue(Mana);
