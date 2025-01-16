@@ -4,7 +4,7 @@
 local sEmpty                  = "";    -- Null string (const)
 local Version                 = {      -- You're not nice if you change these
   Name        = "MhMod",        Author = "Mhat",
-  Release     = 24,             Extra = sEmpty,
+  Release     = 25,             Extra = sEmpty,
   Website     = "github.com/mhatxotic",
   WebsiteFull = "https://github.com/mhatxotic/mhmod"
 };
@@ -4398,8 +4398,8 @@ LocalCommandsData = {
             if Unit ~= ThisUnit then return end;
             local ThisOwner = "party"..Self:GetID();
             if UnitInVehicle(ThisOwner) then ThisUnit = ThisOwner end;
-            Self:SetMinMaxValues(1, UnitPowerMax(ThisUnit, 0));
-            Self:SetValue(UnitPower(ThisUnit, 0));
+            Self:SetMinMaxValues(1, UnitPowerMax(ThisUnit));
+            Self:SetValue(UnitPower(ThisUnit));
             local ManaColour = PowerBarColor[UnitPowerType(ThisUnit)];
             Self:SetStatusBarColor(ManaColour.r, ManaColour.g, ManaColour.b);
           end
@@ -9153,11 +9153,11 @@ MhMod.InitProcedures = {               -- Defeats 60 upvalue limitation
           if not ClassColour then ClassColour = { r=0,g=0,b=0 } end;
           GameTooltipStatusBar:SetStatusBarColor(ClassColour.r+.15,
             ClassColour.g+.15, ClassColour.b+.15);
-          local ManaMax = UnitPowerMax(sUnit, 0);
+          local ManaMax = UnitPowerMax(sUnit);
           if ManaMax <= 1 then
             TooltipManaBar:Hide();
           else
-            local Mana = UnitPower(sUnit, 0);
+            local Mana = UnitPower(sUnit);
             local ManaPerc = (Mana/ManaMax)*100;
             TooltipManaBar:SetMinMaxValues(1, ManaMax);
             TooltipManaBar:SetValue(Mana);
